@@ -1,0 +1,37 @@
+export interface SessionSummary {
+  sessionId: string;
+  project: string;
+  projectName: string;
+  slug: string | null;
+  firstMessage: string;
+  timestamp: number;
+  lastTimestamp: number;
+  messageCount: number;
+  version: string | null;
+  gitBranch: string | null;
+  forkedFrom: {
+    sessionId: string;
+    messageUuid: string;
+  } | null;
+}
+
+export interface ConversationMessage {
+  uuid: string;
+  parentUuid: string | null;
+  type: 'user' | 'assistant' | 'system';
+  timestamp: string;
+  content: string;
+  model?: string;
+  toolCalls?: ToolCallSummary[];
+  isSidechain: boolean;
+}
+
+export interface ToolCallSummary {
+  name: string;
+  input: string;
+}
+
+export interface SessionDetail {
+  summary: SessionSummary;
+  messages: ConversationMessage[];
+}
