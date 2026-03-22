@@ -1,6 +1,6 @@
 import { makeAutoObservable, runInAction } from 'mobx';
-import type { SessionSummary, SessionDetail } from '../types';
-import { fetchSessions, fetchSessionDetail, resumeSession } from '../api';
+import type { SessionSummary, SessionDetail, ForkResult } from '../types';
+import { fetchSessions, fetchSessionDetail, resumeSession, forkSessionAt } from '../api';
 
 export class SessionStore {
   sessions: SessionSummary[] = [];
@@ -13,6 +13,8 @@ export class SessionStore {
   detailLoading = false;
   error: string | null = null;
   resumeCommand: string | null = null;
+  forkResult: ForkResult | null = null;
+  forking = false;
 
   constructor() {
     makeAutoObservable(this);
@@ -126,10 +128,34 @@ export class SessionStore {
     }
   }
 
+  async forkFromMessage(sessionId: string, messageUuid: string) {
+    this.forking = true;
+    this.forkResult = null;
+    try {
+      const result = await forkSessionAt(sessionId, messageUuid);
+      runInAction(() => {
+        this.forkResult = result;
+        this.forking = false;
+        // Refresh session list to show the new forked session
+        this.loadSessions();
+      });
+    } catch (e) {
+      runInAction(() => {
+        this.error = e instanceof Error ? e.message : 'Fork failed';
+        this.forking = false;
+      });
+    }
+  }
+
+  clearForkResult() {
+    this.forkResult = null;
+  }
+
   clearSelection() {
     this.selectedSessionId = null;
     this.selectedDetail = null;
     this.resumeCommand = null;
+    this.forkResult = null;
   }
 }
 

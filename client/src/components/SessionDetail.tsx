@@ -1,5 +1,9 @@
 import { useState } from 'react';
 import { observer } from 'mobx-react-lite';
+import Markdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
+import rehypeHighlight from 'rehype-highlight';
+import 'highlight.js/styles/github-dark.min.css';
 import type { SessionStore } from '../stores/SessionStore';
 import type { ConversationMessage } from '../types';
 
@@ -17,10 +21,12 @@ export const SessionDetail = observer(({ store }: Props) => {
     await store.resume(summary.sessionId);
   };
 
-  const handleCopy = () => {
-    if (store.resumeCommand) {
-      navigator.clipboard.writeText(store.resumeCommand);
-    }
+  const handleCopy = (text: string) => {
+    navigator.clipboard.writeText(text);
+  };
+
+  const handleFork = async (messageUuid: string) => {
+    await store.forkFromMessage(summary.sessionId, messageUuid);
   };
 
   return (
@@ -53,25 +59,87 @@ export const SessionDetail = observer(({ store }: Props) => {
           {store.resumeCommand && (
             <div className="resume-command">
               <code>{store.resumeCommand}</code>
-              <button className="copy-button" onClick={handleCopy}>
+              <button className="copy-button" onClick={() => handleCopy(store.resumeCommand!)}>
                 Copy
               </button>
             </div>
           )}
         </div>
       </div>
+
+      {/* Fork result banner */}
+      {store.forkResult && (
+        <div className="fork-banner">
+          <div className="fork-banner-content">
+            <span className="fork-banner-icon">&#x2442;</span>
+            <div className="fork-banner-text">
+              <strong>Fork created!</strong> New session with {store.forkResult.messagesCopied} messages copied.
+            </div>
+            <div className="fork-banner-actions">
+              <div className="resume-command">
+                <code>{store.forkResult.resumeCommand}</code>
+                <button
+                  className="copy-button"
+                  onClick={() => handleCopy(store.forkResult!.resumeCommand)}
+                >
+                  Copy
+                </button>
+              </div>
+              <button
+                className="fork-open-button"
+                onClick={() => {
+                  const sid = store.forkResult!.sessionId;
+                  store.clearForkResult();
+                  store.selectSession(sid);
+                }}
+              >
+                Open forked session
+              </button>
+              <button className="fork-dismiss" onClick={() => store.clearForkResult()}>
+                Dismiss
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="messages-container">
-        {messages.map((msg) => (
-          <MessageBubble key={msg.uuid} message={msg} />
+        {messages.map((msg, index) => (
+          <MessageBubble
+            key={msg.uuid}
+            message={msg}
+            messageIndex={index}
+            totalMessages={messages.length}
+            onFork={handleFork}
+            forking={store.forking}
+          />
         ))}
       </div>
     </div>
   );
 });
 
-function MessageBubble({ message }: { message: ConversationMessage }) {
+interface MessageBubbleProps {
+  message: ConversationMessage;
+  messageIndex: number;
+  totalMessages: number;
+  onFork: (uuid: string) => void;
+  forking: boolean;
+}
+
+function MessageBubble({ message, messageIndex, totalMessages, onFork, forking }: MessageBubbleProps) {
   const [showTools, setShowTools] = useState(false);
+  const [confirmFork, setConfirmFork] = useState(false);
   const isUser = message.type === 'user';
+
+  const handleForkClick = () => {
+    if (confirmFork) {
+      onFork(message.uuid);
+      setConfirmFork(false);
+    } else {
+      setConfirmFork(true);
+    }
+  };
 
   return (
     <div className={`message ${isUser ? 'message-user' : 'message-assistant'}`}>
@@ -83,9 +151,29 @@ function MessageBubble({ message }: { message: ConversationMessage }) {
         {message.model && (
           <span className="message-model">{message.model}</span>
         )}
+        <span className="message-index">
+          #{messageIndex + 1}/{totalMessages}
+        </span>
+        <button
+          className={`fork-button ${confirmFork ? 'fork-button-confirm' : ''}`}
+          onClick={handleForkClick}
+          onBlur={() => setConfirmFork(false)}
+          disabled={forking}
+          title="Fork conversation from this message"
+        >
+          {forking ? 'Forking...' : confirmFork ? 'Click to confirm fork' : 'Fork from here'}
+        </button>
       </div>
-      <div className="message-content">
-        {message.content || <span className="text-muted">(tool calls only)</span>}
+      <div className={`message-content ${isUser ? '' : 'markdown-body'}`}>
+        {!message.content ? (
+          <span className="text-muted">(tool calls only)</span>
+        ) : isUser ? (
+          message.content
+        ) : (
+          <Markdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeHighlight]}>
+            {message.content}
+          </Markdown>
+        )}
       </div>
       {message.toolCalls && message.toolCalls.length > 0 && (
         <div className="tool-calls">

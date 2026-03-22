@@ -1,4 +1,4 @@
-import type { SessionSummary, SessionDetail } from './types';
+import type { SessionSummary, SessionDetail, ForkResult } from './types';
 
 const BASE = '/api';
 
@@ -29,5 +29,21 @@ export async function resumeSession(
     method: 'POST',
   });
   if (!res.ok) throw new Error('Failed to resume session');
+  return res.json();
+}
+
+export async function forkSessionAt(
+  sessionId: string,
+  messageUuid: string
+): Promise<ForkResult> {
+  const res = await fetch(`${BASE}/sessions/${sessionId}/fork`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ messageUuid }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: 'Fork failed' }));
+    throw new Error(err.error || 'Fork failed');
+  }
   return res.json();
 }

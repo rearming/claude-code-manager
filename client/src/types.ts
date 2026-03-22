@@ -35,3 +35,10 @@ export interface SessionDetail {
   summary: SessionSummary;
   messages: ConversationMessage[];
 }
+
+export interface ForkResult {
+  sessionId: string;
+  projectDir: string;
+  resumeCommand: string;
+  messagesCopied: number;
+}

@@ -401,6 +401,94 @@ body {
   word-break: break-word;
 }
 
+.markdown-body {
+  white-space: normal;
+}
+
+.markdown-body p {
+  margin: 0 0 8px;
+}
+
+.markdown-body p:last-child {
+  margin-bottom: 0;
+}
+
+.markdown-body pre {
+  background: rgba(0, 0, 0, 0.3);
+  border-radius: 6px;
+  padding: 12px;
+  overflow-x: auto;
+  margin: 8px 0;
+}
+
+.markdown-body code {
+  font-family: var(--font-mono);
+  font-size: 13px;
+}
+
+.markdown-body :not(pre) > code {
+  background: rgba(0, 0, 0, 0.3);
+  padding: 2px 5px;
+  border-radius: 3px;
+  font-size: 12px;
+}
+
+.markdown-body ul, .markdown-body ol {
+  padding-left: 20px;
+  margin: 4px 0;
+}
+
+.markdown-body li {
+  margin: 2px 0;
+}
+
+.markdown-body h1, .markdown-body h2, .markdown-body h3 {
+  margin: 12px 0 6px;
+  font-weight: 600;
+}
+
+.markdown-body h1 { font-size: 18px; }
+.markdown-body h2 { font-size: 16px; }
+.markdown-body h3 { font-size: 14px; }
+
+.markdown-body table {
+  border-collapse: collapse;
+  margin: 8px 0;
+  width: 100%;
+}
+
+.markdown-body th, .markdown-body td {
+  border: 1px solid var(--border);
+  padding: 6px 10px;
+  text-align: left;
+  font-size: 13px;
+}
+
+.markdown-body th {
+  background: rgba(0, 0, 0, 0.2);
+  font-weight: 600;
+}
+
+.markdown-body blockquote {
+  border-left: 3px solid var(--accent);
+  margin: 8px 0;
+  padding: 4px 12px;
+  color: var(--text-secondary);
+}
+
+.markdown-body strong {
+  color: var(--text-primary);
+}
+
+.markdown-body a {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+.markdown-body a:hover {
+  text-decoration: underline;
+}
+
 .text-muted {
   color: var(--text-muted);
   font-style: italic;
@@ -464,4 +552,115 @@ body {
 
 .clickable:hover {
   color: var(--accent);
+}
+
+/* Fork Button */
+.fork-button {
+  margin-left: auto;
+  padding: 2px 8px;
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text-muted);
+  font-size: 10px;
+  cursor: pointer;
+  transition: all 0.15s;
+  opacity: 0;
+}
+
+.message:hover .fork-button {
+  opacity: 1;
+}
+
+.fork-button:hover {
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+  border-color: var(--accent);
+}
+
+.fork-button-confirm {
+  opacity: 1;
+  background: var(--accent);
+  color: white;
+  border-color: var(--accent);
+}
+
+.fork-button-confirm:hover {
+  background: var(--accent-hover);
+}
+
+.fork-button:disabled {
+  opacity: 0.5;
+  cursor: wait;
+}
+
+.message-index {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-muted);
+  opacity: 0.5;
+}
+
+/* Fork Banner */
+.fork-banner {
+  padding: 12px 24px;
+  background: linear-gradient(135deg, #1a3a2e, #16213e);
+  border-bottom: 1px solid var(--success);
+}
+
+.fork-banner-content {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.fork-banner-icon {
+  font-size: 24px;
+  color: var(--success);
+}
+
+.fork-banner-text {
+  flex: 1;
+  font-size: 14px;
+  color: var(--text-primary);
+}
+
+.fork-banner-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.fork-open-button {
+  padding: 6px 12px;
+  background: var(--success);
+  border: none;
+  border-radius: 6px;
+  color: #1a1a2e;
+  font-weight: 600;
+  font-size: 12px;
+  cursor: pointer;
+  transition: opacity 0.15s;
+}
+
+.fork-open-button:hover {
+  opacity: 0.85;
+}
+
+.fork-dismiss {
+  padding: 6px 12px;
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text-muted);
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.fork-dismiss:hover {
+  background: var(--bg-card-hover);
+  color: var(--text-secondary);
 }

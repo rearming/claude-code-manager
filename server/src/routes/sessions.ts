@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { listSessions, getSessionDetail } from '../services/claude-data.js';
+import { forkSession } from '../services/forker.js';
 
 const router = Router();
 
@@ -42,6 +43,22 @@ router.get('/:id', async (req, res) => {
   } catch (err) {
     console.error('Error getting session:', err);
     res.status(500).json({ error: 'Failed to get session' });
+  }
+});
+
+router.post('/:id/fork', async (req, res) => {
+  try {
+    const { messageUuid } = req.body;
+    if (!messageUuid || typeof messageUuid !== 'string') {
+      res.status(400).json({ error: 'messageUuid is required' });
+      return;
+    }
+    const result = await forkSession(req.params.id, messageUuid);
+    res.json(result);
+  } catch (err) {
+    console.error('Error forking session:', err);
+    const message = err instanceof Error ? err.message : 'Failed to fork session';
+    res.status(500).json({ error: message });
   }
 });
 
