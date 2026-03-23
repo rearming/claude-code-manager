@@ -2,6 +2,20 @@ import type { SessionSummary, SessionDetail, ForkResult } from './types';
 
 const BASE = '/api';
 
+export interface BrowseResult {
+  current: string;
+  parent: string | null;
+  dirs: { name: string; path: string }[];
+}
+
+export async function browseDirectory(dirPath?: string): Promise<BrowseResult> {
+  const url = new URL(`${BASE}/browse`, window.location.origin);
+  if (dirPath) url.searchParams.set('path', dirPath);
+  const res = await fetch(url.toString());
+  if (!res.ok) throw new Error('Failed to browse directory');
+  return res.json();
+}
+
 export async function fetchSessions(params?: {
   project?: string;
   search?: string;
@@ -51,9 +65,23 @@ export async function forkSessionAt(
 export interface StreamCallbacks {
   onInit?: (data: { sessionId: string; model: string }) => void;
   onText?: (text: string) => void;
+  onRaw?: (data: string) => void;
   onResult?: (data: { result: string; durationMs: number; cost: number }) => void;
   onError?: (error: string) => void;
   onDone?: () => void;
+}
+
+/**
+ * Start a new session via SSE streaming.
+ * Returns an abort function to cancel the request.
+ */
+export function streamNewSession(
+  message: string,
+  projectPath: string,
+  dangerouslySkipPermissions: boolean,
+  callbacks: StreamCallbacks
+): () => void {
+  return streamSSE(`${BASE}/sessions/new`, { message, projectPath, dangerouslySkipPermissions }, callbacks);
 }
 
 /**
@@ -66,14 +94,22 @@ export function streamMessageToSession(
   dangerouslySkipPermissions: boolean,
   callbacks: StreamCallbacks
 ): () => void {
+  return streamSSE(`${BASE}/sessions/${sessionId}/send`, { message, dangerouslySkipPermissions }, callbacks);
+}
+
+function streamSSE(
+  url: string,
+  body: object,
+  callbacks: StreamCallbacks
+): () => void {
   const controller = new AbortController();
 
   (async () => {
     try {
-      const res = await fetch(`${BASE}/sessions/${sessionId}/send`, {
+      const res = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message, dangerouslySkipPermissions }),
+        body: JSON.stringify(body),
         signal: controller.signal,
       });
 
@@ -114,6 +150,9 @@ export function streamMessageToSession(
                 break;
               case 'text':
                 callbacks.onText?.(event.text);
+                break;
+              case 'raw':
+                callbacks.onRaw?.(event.data);
                 break;
               case 'result':
                 callbacks.onResult?.(event);

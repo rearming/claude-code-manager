@@ -31,6 +31,31 @@ export async function streamMessage(
     throw new Error(`Cannot determine project directory for session ${sessionId}`);
   }
 
+  const escapedMessage = message.replace(/"/g, '\\"');
+  const permFlag = options.dangerouslySkipPermissions ? ' --dangerously-skip-permissions' : '';
+  const cmd = `claude --resume ${sessionId} --print --output-format stream-json --verbose${permFlag} -p "${escapedMessage}"`;
+
+  streamClaude(cmd, projectPath, res);
+}
+
+/**
+ * Start a brand-new session in a given project directory.
+ * Returns the new session ID via the SSE init event.
+ */
+export async function streamNewSession(
+  message: string,
+  projectPath: string,
+  res: Response,
+  options: StreamOptions = {}
+): Promise<void> {
+  const escapedMessage = message.replace(/"/g, '\\"');
+  const permFlag = options.dangerouslySkipPermissions ? ' --dangerously-skip-permissions' : '';
+  const cmd = `claude --print --output-format stream-json --verbose${permFlag} -p "${escapedMessage}"`;
+
+  streamClaude(cmd, projectPath, res);
+}
+
+function streamClaude(cmd: string, cwd: string, res: Response): void {
   // Set up SSE headers
   res.writeHead(200, {
     'Content-Type': 'text/event-stream',
@@ -42,16 +67,9 @@ export async function streamMessage(
     res.write(`data: ${JSON.stringify(data)}\n\n`);
   };
 
-  // Build the full command as a single string with proper quoting.
-  // We must use shell to resolve 'claude' from PATH, so we quote the
-  // message to prevent word-splitting.
-  const escapedMessage = message.replace(/"/g, '\\"');
-  const permFlag = options.dangerouslySkipPermissions ? ' --dangerously-skip-permissions' : '';
-  const cmd = `claude --resume ${sessionId} --print --output-format stream-json --verbose${permFlag} -p "${escapedMessage}"`;
-
   const proc: ChildProcess = spawn(cmd, [], {
     shell: true,
-    cwd: projectPath,
+    cwd,
     timeout: 300_000,
   });
 
@@ -70,6 +88,9 @@ export async function streamMessage(
 
       try {
         const event = JSON.parse(trimmed);
+
+        // Always forward the raw JSON line
+        sendEvent({ type: 'raw', data: trimmed });
 
         if (event.type === 'system' && event.subtype === 'init') {
           sendEvent({ type: 'init', sessionId: event.session_id, model: event.model });
@@ -92,16 +113,21 @@ export async function streamMessage(
           });
         }
       } catch {
-        // Skip unparseable lines
+        // Forward unparseable lines as raw too
+        sendEvent({ type: 'raw', data: trimmed });
       }
     }
   });
 
   proc.stderr?.on('data', (chunk: Buffer) => {
     const text = chunk.toString().trim();
-    // Filter out harmless stdin warnings from non-interactive mode
-    if (text && !text.includes('no stdin data received')) {
-      sendEvent({ type: 'error', error: text });
+    if (text) {
+      // Always forward stderr as raw
+      sendEvent({ type: 'raw', data: `[stderr] ${text}` });
+      // Filter out harmless stdin warnings from non-interactive mode
+      if (!text.includes('no stdin data received')) {
+        sendEvent({ type: 'error', error: text });
+      }
     }
   });
 

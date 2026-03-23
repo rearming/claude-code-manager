@@ -1,7 +1,28 @@
 import { Router } from 'express';
-import { getResumeCommand, streamMessage } from '../services/launcher.js';
+import { getResumeCommand, streamMessage, streamNewSession } from '../services/launcher.js';
 
 const router = Router();
+
+router.post('/new', async (req, res) => {
+  try {
+    const { message, projectPath, dangerouslySkipPermissions } = req.body;
+    if (!message || typeof message !== 'string') {
+      res.status(400).json({ error: 'message is required' });
+      return;
+    }
+    if (!projectPath || typeof projectPath !== 'string') {
+      res.status(400).json({ error: 'projectPath is required' });
+      return;
+    }
+    await streamNewSession(message, projectPath, res, { dangerouslySkipPermissions: !!dangerouslySkipPermissions });
+  } catch (err) {
+    console.error('Error creating new session:', err);
+    const msg = err instanceof Error ? err.message : 'Failed to create session';
+    if (!res.headersSent) {
+      res.status(500).json({ error: msg });
+    }
+  }
+});
 
 router.post('/:id/resume', (req, res) => {
   const command = getResumeCommand(req.params.id);

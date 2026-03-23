@@ -18,8 +18,6 @@ export const SessionDetail = observer(({ store }: Props) => {
   const { summary, messages } = detail;
   const containerRef = useRef<HTMLDivElement>(null);
   const [showScrollButton, setShowScrollButton] = useState(false);
-  const restoredRef = useRef(false);
-  const prevMessageCountRef = useRef(messages.length);
 
   const isNearBottom = useCallback(() => {
     const el = containerRef.current;
@@ -27,55 +25,60 @@ export const SessionDetail = observer(({ store }: Props) => {
     return el.scrollHeight - el.scrollTop - el.clientHeight < 100;
   }, []);
 
-  const scrollToBottom = useCallback(() => {
+  const scrollToBottom = useCallback((smooth = true) => {
     const el = containerRef.current;
     if (!el) return;
-    el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' });
+    el.scrollTo({ top: el.scrollHeight, behavior: smooth ? 'smooth' : 'instant' });
   }, []);
 
-  // Restore scroll position when session loads
+  // On mount: either scroll to bottom (after send / new messages) or restore saved position
   useEffect(() => {
-    restoredRef.current = false;
-  }, [summary.sessionId]);
-
-  useEffect(() => {
-    if (restoredRef.current) return;
     const el = containerRef.current;
     if (!el || messages.length === 0) return;
 
-    const saved = store.getScrollPosition(summary.sessionId);
-    if (saved !== undefined) {
-      el.scrollTop = saved;
+    if (store.scrollToBottomOnLoad) {
+      store.scrollToBottomOnLoad = false;
+      requestAnimationFrame(() => {
+        el.scrollTop = el.scrollHeight;
+      });
+    } else {
+      const saved = store.getScrollPosition(summary.sessionId);
+      if (saved !== undefined && saved.messageCount < messages.length) {
+        // New messages arrived since we last viewed — scroll to bottom
+        requestAnimationFrame(() => {
+          el.scrollTop = el.scrollHeight;
+        });
+      } else if (saved !== undefined) {
+        el.scrollTop = saved.position;
+      }
     }
-    restoredRef.current = true;
-    prevMessageCountRef.current = messages.length;
-  }, [messages.length, summary.sessionId, store]);
+    // Only run on initial mount / session switch
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [summary.sessionId, messages.length]);
 
   // Save scroll position on scroll
   const handleScroll = useCallback(() => {
     const el = containerRef.current;
     if (!el) return;
     setShowScrollButton(!isNearBottom());
-    store.saveScrollPosition(summary.sessionId, el.scrollTop);
-  }, [store, summary.sessionId, isNearBottom]);
+    store.saveScrollPosition(summary.sessionId, el.scrollTop, messages.length);
+  }, [store, summary.sessionId, isNearBottom, messages.length]);
 
-  // Auto-scroll on new messages / streaming
-  useEffect(() => {
-    if (!store.settings.autoScrollOnNewMessages) return;
-    if (messages.length > prevMessageCountRef.current) {
-      scrollToBottom();
-    }
-    prevMessageCountRef.current = messages.length;
-  }, [messages.length, store.settings.autoScrollOnNewMessages, scrollToBottom]);
-
-  // Auto-scroll during streaming
+  // Auto-scroll during streaming text updates
   useEffect(() => {
     if (!store.sending || !store.settings.autoScrollOnNewMessages) return;
-    if (isNearBottom()) {
-      const el = containerRef.current;
-      if (el) el.scrollTop = el.scrollHeight;
+    const el = containerRef.current;
+    if (el && isNearBottom()) {
+      el.scrollTop = el.scrollHeight;
     }
   }, [store.streamingText, store.sending, store.settings.autoScrollOnNewMessages, isNearBottom]);
+
+  // Auto-scroll when pending user message appears (optimistic message)
+  useEffect(() => {
+    if (store.pendingUserMessage && store.settings.autoScrollOnNewMessages) {
+      requestAnimationFrame(() => scrollToBottom(false));
+    }
+  }, [store.pendingUserMessage, store.settings.autoScrollOnNewMessages, scrollToBottom]);
 
   const handleResume = async () => {
     await store.resume(summary.sessionId);
@@ -216,7 +219,7 @@ export const SessionDetail = observer(({ store }: Props) => {
         </div>
 
         {showScrollButton && (
-          <button className="scroll-to-bottom" onClick={scrollToBottom} title="Scroll to bottom">
+          <button className="scroll-to-bottom" onClick={() => scrollToBottom()} title="Scroll to bottom">
             &#x2193;
           </button>
         )}

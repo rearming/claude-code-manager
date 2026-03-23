@@ -114,7 +114,7 @@ export async function listSessions(): Promise<SessionSummary[]> {
         slug: metadata.slug || null,
         firstMessage: historyEntry?.firstMessage || metadata.firstMessage || '',
         timestamp: historyEntry?.firstTimestamp || metadata.timestamp || 0,
-        lastTimestamp: historyEntry?.lastTimestamp || metadata.lastTimestamp || 0,
+        lastTimestamp: Math.max(historyEntry?.lastTimestamp || 0, metadata.lastTimestamp || 0),
         messageCount: historyEntry?.messageCount || metadata.messageCount,
         version: metadata.version || null,
         gitBranch: metadata.gitBranch || null,

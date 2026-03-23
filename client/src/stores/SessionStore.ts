@@ -1,6 +1,6 @@
 import { makeAutoObservable, runInAction } from 'mobx';
 import type { SessionSummary, SessionDetail, ForkResult } from '../types';
-import { fetchSessions, fetchSessionDetail, resumeSession, forkSessionAt, streamMessageToSession } from '../api';
+import { fetchSessions, fetchSessionDetail, resumeSession, forkSessionAt, streamMessageToSession, streamNewSession } from '../api';
 
 const SETTINGS_KEY = 'ccm-settings';
 const SCROLL_POSITIONS_KEY = 'ccm-scroll-positions';
@@ -24,7 +24,7 @@ function loadSettings(): Settings {
   }
 }
 
-function loadScrollPositions(): Record<string, number> {
+function loadScrollPositions(): Record<string, { position: number; messageCount: number } | number> {
   try {
     const raw = localStorage.getItem(SCROLL_POSITIONS_KEY);
     return raw ? JSON.parse(raw) : {};
@@ -49,8 +49,10 @@ export class SessionStore {
   sending = false;
   streamingText = '';
   abortStream: (() => void) | null = null;
+  showTerminal = false;
+  rawLines: string[] = [];
   settings: Settings = loadSettings();
-  scrollPositions: Record<string, number> = loadScrollPositions();
+  scrollPositions: Record<string, { position: number; messageCount: number } | number> = loadScrollPositions();
   showSettings = false;
 
   constructor() {
@@ -59,6 +61,22 @@ export class SessionStore {
 
   toggleSettings() {
     this.showSettings = !this.showSettings;
+  }
+
+  toggleTerminal() {
+    this.showTerminal = !this.showTerminal;
+  }
+
+  appendRawLine(line: string) {
+    this.rawLines.push(line);
+    // Keep last 1000 lines
+    if (this.rawLines.length > 1000) {
+      this.rawLines = this.rawLines.slice(-800);
+    }
+  }
+
+  clearRawLines() {
+    this.rawLines = [];
   }
 
   setAutoScroll(value: boolean) {
@@ -71,13 +89,17 @@ export class SessionStore {
     this.persistSettings();
   }
 
-  saveScrollPosition(sessionId: string, position: number) {
-    this.scrollPositions[sessionId] = position;
+  saveScrollPosition(sessionId: string, position: number, messageCount: number) {
+    this.scrollPositions[sessionId] = { position, messageCount };
     this.persistScrollPositions();
   }
 
-  getScrollPosition(sessionId: string): number | undefined {
-    return this.scrollPositions[sessionId];
+  getScrollPosition(sessionId: string): { position: number; messageCount: number } | undefined {
+    const saved = this.scrollPositions[sessionId];
+    if (saved === undefined) return undefined;
+    // Backwards compat: old format stored just a number
+    if (typeof saved === 'number') return { position: saved, messageCount: 0 };
+    return saved;
   }
 
   private persistSettings() {
@@ -215,23 +237,52 @@ export class SessionStore {
   }
 
   pendingUserMessage: string | null = null;
+  scrollToBottomOnLoad = false;
+  showNewSession = false;
+  newSessionId: string | null = null;
 
-  sendMessage(sessionId: string, message: string) {
+  openNewSession() {
+    this.showNewSession = true;
+  }
+
+  closeNewSession() {
+    this.showNewSession = false;
+  }
+
+  startNewSession(message: string, projectPath: string) {
+    this.showNewSession = false;
     this.sending = true;
     this.streamingText = '';
     this.pendingUserMessage = message;
+    this.newSessionId = null;
     this.error = null;
 
-    const abort = streamMessageToSession(sessionId, message, this.settings.dangerouslySkipPermissions, {
+    // Clear current selection to show the "new session" streaming view
+    this.selectedSessionId = null;
+    this.selectedDetail = null;
+
+    this.rawLines = [];
+    const abort = streamNewSession(message, projectPath, this.settings.dangerouslySkipPermissions, {
+      onInit: (data) => {
+        runInAction(() => {
+          this.newSessionId = data.sessionId;
+        });
+      },
       onText: (text) => {
         runInAction(() => {
           this.streamingText += text;
+        });
+      },
+      onRaw: (data) => {
+        runInAction(() => {
+          this.appendRawLine(data);
         });
       },
       onError: (error) => {
         runInAction(() => {
           this.error = error;
           this.sending = false;
+          this.pendingUserMessage = null;
         });
       },
       onDone: () => {
@@ -240,6 +291,52 @@ export class SessionStore {
           this.streamingText = '';
           this.pendingUserMessage = null;
           this.abortStream = null;
+          const sid = this.newSessionId;
+          this.newSessionId = null;
+          this.loadSessions();
+          if (sid) {
+            this.scrollToBottomOnLoad = true;
+            this.selectSession(sid);
+          }
+        });
+      },
+    });
+
+    this.abortStream = abort;
+  }
+
+  sendMessage(sessionId: string, message: string) {
+    this.sending = true;
+    this.streamingText = '';
+    this.pendingUserMessage = message;
+    this.error = null;
+    this.rawLines = [];
+
+    const abort = streamMessageToSession(sessionId, message, this.settings.dangerouslySkipPermissions, {
+      onText: (text) => {
+        runInAction(() => {
+          this.streamingText += text;
+        });
+      },
+      onRaw: (data) => {
+        runInAction(() => {
+          this.appendRawLine(data);
+        });
+      },
+      onError: (error) => {
+        runInAction(() => {
+          this.error = error;
+          this.sending = false;
+          this.pendingUserMessage = null;
+        });
+      },
+      onDone: () => {
+        runInAction(() => {
+          this.sending = false;
+          this.streamingText = '';
+          this.pendingUserMessage = null;
+          this.abortStream = null;
+          this.scrollToBottomOnLoad = true;
           // Reload conversation to show the persisted messages
           this.selectSession(sessionId);
         });

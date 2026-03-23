@@ -4,6 +4,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import sessionsRouter from './routes/sessions.js';
 import launchRouter from './routes/launch.js';
+import browseRouter from './routes/browse.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -16,6 +17,7 @@ app.use(express.json());
 // API routes
 app.use('/api/sessions', sessionsRouter);
 app.use('/api/sessions', launchRouter);
+app.use('/api/browse', browseRouter);
 
 // Serve static client build in production
 const clientDist = path.join(__dirname, '..', '..', 'client', 'dist');

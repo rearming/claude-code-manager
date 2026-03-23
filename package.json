@@ -2,13 +2,21 @@
   "name": "claude-code-manager",
   "version": "0.1.0",
   "private": true,
-  "workspaces": ["server", "client"],
+  "workspaces": [
+    "server",
+    "client"
+  ],
   "scripts": {
     "dev": "concurrently -n server,client -c blue,green \"npm run dev -w server\" \"npm run dev -w client\"",
     "build": "npm run build -w client && npm run build -w server",
     "start": "npm run start -w server"
   },
   "devDependencies": {
-    "concurrently": "^9.1.2"
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/react": "^16.3.2",
+    "@testing-library/user-event": "^14.6.1",
+    "concurrently": "^9.1.2",
+    "jsdom": "^29.0.1",
+    "vitest": "^4.1.0"
   }
 }
