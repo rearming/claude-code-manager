@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { observer } from 'mobx-react-lite';
 import Markdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -115,6 +115,11 @@ export const SessionDetail = observer(({ store }: Props) => {
           />
         ))}
       </div>
+
+      <MessageInput
+        onSend={(msg) => store.sendMessage(summary.sessionId, msg)}
+        sending={store.sending}
+      />
     </div>
   );
 });
@@ -196,6 +201,52 @@ function MessageBubble({ message, messageIndex, totalMessages, onFork, forking }
           )}
         </div>
       )}
+    </div>
+  );
+}
+
+interface MessageInputProps {
+  onSend: (message: string) => void;
+  sending: boolean;
+}
+
+function MessageInput({ onSend, sending }: MessageInputProps) {
+  const [text, setText] = useState('');
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  const handleSubmit = () => {
+    const trimmed = text.trim();
+    if (!trimmed || sending) return;
+    onSend(trimmed);
+    setText('');
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      handleSubmit();
+    }
+  };
+
+  return (
+    <div className="message-input-container">
+      <textarea
+        ref={textareaRef}
+        className="message-input"
+        placeholder={sending ? 'Claude is thinking...' : 'Send a message to this session...'}
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+        onKeyDown={handleKeyDown}
+        disabled={sending}
+        rows={2}
+      />
+      <button
+        className="send-button"
+        onClick={handleSubmit}
+        disabled={!text.trim() || sending}
+      >
+        {sending ? 'Sending...' : 'Send'}
+      </button>
     </div>
   );
 }

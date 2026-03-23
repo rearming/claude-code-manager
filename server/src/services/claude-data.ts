@@ -328,6 +328,51 @@ export async function getSessionDetail(sessionId: string): Promise<SessionDetail
   };
 }
 
+/**
+ * Find the original project/cwd path for a session by reading its JSONL.
+ * Claude Code scopes --resume by cwd, so we need the original directory.
+ */
+export async function findSessionProject(sessionId: string): Promise<string | null> {
+  const claudeHome = getClaudeHome();
+  const projectsDir = path.join(claudeHome, 'projects');
+
+  try {
+    const dirs = await fs.promises.readdir(projectsDir, { withFileTypes: true });
+    for (const dir of dirs) {
+      if (!dir.isDirectory()) continue;
+      const candidate = path.join(projectsDir, dir.name, `${sessionId}.jsonl`);
+      try {
+        await fs.promises.access(candidate);
+      } catch {
+        continue;
+      }
+
+      // Read the file to find cwd from first user message
+      const stream = fs.createReadStream(candidate, { encoding: 'utf8' });
+      const rl = readline.createInterface({ input: stream, crlfDelay: Infinity });
+      for await (const line of rl) {
+        if (!line.trim()) continue;
+        try {
+          const entry = JSON.parse(line);
+          if (entry.cwd) {
+            rl.close();
+            stream.destroy();
+            return entry.cwd;
+          }
+        } catch {
+          // skip
+        }
+      }
+
+      // Fallback: derive from directory name
+      return projectDirToName(dir.name);
+    }
+  } catch {
+    // projects dir doesn't exist
+  }
+  return null;
+}
+
 async function getHistoryEntry(sessionId: string): Promise<{ firstMessage: string } | null> {
   const historyPath = path.join(getClaudeHome(), 'history.jsonl');
   try {

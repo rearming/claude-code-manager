@@ -47,3 +47,19 @@ export async function forkSessionAt(
   }
   return res.json();
 }
+
+export async function sendMessageToSession(
+  sessionId: string,
+  message: string
+): Promise<{ response: string; exitCode: number }> {
+  const res = await fetch(`${BASE}/sessions/${sessionId}/send`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ message }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: 'Send failed' }));
+    throw new Error(err.error || 'Send failed');
+  }
+  return res.json();
+}

@@ -1,6 +1,6 @@
 import { makeAutoObservable, runInAction } from 'mobx';
 import type { SessionSummary, SessionDetail, ForkResult } from '../types';
-import { fetchSessions, fetchSessionDetail, resumeSession, forkSessionAt } from '../api';
+import { fetchSessions, fetchSessionDetail, resumeSession, forkSessionAt, sendMessageToSession } from '../api';
 
 export class SessionStore {
   sessions: SessionSummary[] = [];
@@ -15,6 +15,8 @@ export class SessionStore {
   resumeCommand: string | null = null;
   forkResult: ForkResult | null = null;
   forking = false;
+  sending = false;
+  lastResponse: string | null = null;
 
   constructor() {
     makeAutoObservable(this);
@@ -143,6 +145,25 @@ export class SessionStore {
       runInAction(() => {
         this.error = e instanceof Error ? e.message : 'Fork failed';
         this.forking = false;
+      });
+    }
+  }
+
+  async sendMessage(sessionId: string, message: string) {
+    this.sending = true;
+    this.lastResponse = null;
+    try {
+      const result = await sendMessageToSession(sessionId, message);
+      runInAction(() => {
+        this.lastResponse = result.response;
+        this.sending = false;
+        // Reload the conversation to show the new messages
+        this.selectSession(sessionId);
+      });
+    } catch (e) {
+      runInAction(() => {
+        this.error = e instanceof Error ? e.message : 'Send failed';
+        this.sending = false;
       });
     }
   }
