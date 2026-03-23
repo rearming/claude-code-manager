@@ -2,6 +2,35 @@ import { makeAutoObservable, runInAction } from 'mobx';
 import type { SessionSummary, SessionDetail, ForkResult } from '../types';
 import { fetchSessions, fetchSessionDetail, resumeSession, forkSessionAt, streamMessageToSession } from '../api';
 
+const SETTINGS_KEY = 'ccm-settings';
+const SCROLL_POSITIONS_KEY = 'ccm-scroll-positions';
+
+interface Settings {
+  autoScrollOnNewMessages: boolean;
+}
+
+const defaultSettings: Settings = {
+  autoScrollOnNewMessages: true,
+};
+
+function loadSettings(): Settings {
+  try {
+    const raw = localStorage.getItem(SETTINGS_KEY);
+    return raw ? { ...defaultSettings, ...JSON.parse(raw) } : { ...defaultSettings };
+  } catch {
+    return { ...defaultSettings };
+  }
+}
+
+function loadScrollPositions(): Record<string, number> {
+  try {
+    const raw = localStorage.getItem(SCROLL_POSITIONS_KEY);
+    return raw ? JSON.parse(raw) : {};
+  } catch {
+    return {};
+  }
+}
+
 export class SessionStore {
   sessions: SessionSummary[] = [];
   selectedDetail: SessionDetail | null = null;
@@ -18,9 +47,38 @@ export class SessionStore {
   sending = false;
   streamingText = '';
   abortStream: (() => void) | null = null;
+  settings: Settings = loadSettings();
+  scrollPositions: Record<string, number> = loadScrollPositions();
+  showSettings = false;
 
   constructor() {
     makeAutoObservable(this);
+  }
+
+  toggleSettings() {
+    this.showSettings = !this.showSettings;
+  }
+
+  setAutoScroll(value: boolean) {
+    this.settings.autoScrollOnNewMessages = value;
+    this.persistSettings();
+  }
+
+  saveScrollPosition(sessionId: string, position: number) {
+    this.scrollPositions[sessionId] = position;
+    this.persistScrollPositions();
+  }
+
+  getScrollPosition(sessionId: string): number | undefined {
+    return this.scrollPositions[sessionId];
+  }
+
+  private persistSettings() {
+    localStorage.setItem(SETTINGS_KEY, JSON.stringify(this.settings));
+  }
+
+  private persistScrollPositions() {
+    localStorage.setItem(SCROLL_POSITIONS_KEY, JSON.stringify(this.scrollPositions));
   }
 
   get projects(): string[] {
@@ -149,9 +207,12 @@ export class SessionStore {
     }
   }
 
+  pendingUserMessage: string | null = null;
+
   sendMessage(sessionId: string, message: string) {
     this.sending = true;
     this.streamingText = '';
+    this.pendingUserMessage = message;
     this.error = null;
 
     const abort = streamMessageToSession(sessionId, message, {
@@ -170,6 +231,7 @@ export class SessionStore {
         runInAction(() => {
           this.sending = false;
           this.streamingText = '';
+          this.pendingUserMessage = null;
           this.abortStream = null;
           // Reload conversation to show the persisted messages
           this.selectSession(sessionId);

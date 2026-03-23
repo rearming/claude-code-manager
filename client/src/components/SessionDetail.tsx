@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import { observer } from 'mobx-react-lite';
 import Markdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -16,6 +16,66 @@ export const SessionDetail = observer(({ store }: Props) => {
   if (!detail) return null;
 
   const { summary, messages } = detail;
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [showScrollButton, setShowScrollButton] = useState(false);
+  const restoredRef = useRef(false);
+  const prevMessageCountRef = useRef(messages.length);
+
+  const isNearBottom = useCallback(() => {
+    const el = containerRef.current;
+    if (!el) return true;
+    return el.scrollHeight - el.scrollTop - el.clientHeight < 100;
+  }, []);
+
+  const scrollToBottom = useCallback(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' });
+  }, []);
+
+  // Restore scroll position when session loads
+  useEffect(() => {
+    restoredRef.current = false;
+  }, [summary.sessionId]);
+
+  useEffect(() => {
+    if (restoredRef.current) return;
+    const el = containerRef.current;
+    if (!el || messages.length === 0) return;
+
+    const saved = store.getScrollPosition(summary.sessionId);
+    if (saved !== undefined) {
+      el.scrollTop = saved;
+    }
+    restoredRef.current = true;
+    prevMessageCountRef.current = messages.length;
+  }, [messages.length, summary.sessionId, store]);
+
+  // Save scroll position on scroll
+  const handleScroll = useCallback(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    setShowScrollButton(!isNearBottom());
+    store.saveScrollPosition(summary.sessionId, el.scrollTop);
+  }, [store, summary.sessionId, isNearBottom]);
+
+  // Auto-scroll on new messages / streaming
+  useEffect(() => {
+    if (!store.settings.autoScrollOnNewMessages) return;
+    if (messages.length > prevMessageCountRef.current) {
+      scrollToBottom();
+    }
+    prevMessageCountRef.current = messages.length;
+  }, [messages.length, store.settings.autoScrollOnNewMessages, scrollToBottom]);
+
+  // Auto-scroll during streaming
+  useEffect(() => {
+    if (!store.sending || !store.settings.autoScrollOnNewMessages) return;
+    if (isNearBottom()) {
+      const el = containerRef.current;
+      if (el) el.scrollTop = el.scrollHeight;
+    }
+  }, [store.streamingText, store.sending, store.settings.autoScrollOnNewMessages, isNearBottom]);
 
   const handleResume = async () => {
     await store.resume(summary.sessionId);
@@ -103,43 +163,62 @@ export const SessionDetail = observer(({ store }: Props) => {
         </div>
       )}
 
-      <div className="messages-container">
-        {messages.map((msg, index) => (
-          <MessageBubble
-            key={msg.uuid}
-            message={msg}
-            messageIndex={index}
-            totalMessages={messages.length}
-            onFork={handleFork}
-            forking={store.forking}
-          />
-        ))}
+      <div className="messages-wrapper">
+        <div className="messages-container" ref={containerRef} onScroll={handleScroll}>
+          {messages.map((msg, index) => (
+            <MessageBubble
+              key={msg.uuid}
+              message={msg}
+              messageIndex={index}
+              totalMessages={messages.length}
+              onFork={handleFork}
+              forking={store.forking}
+            />
+          ))}
 
-        {/* Live streaming response */}
-        {store.sending && store.streamingText && (
-          <div className="message message-assistant streaming">
-            <div className="message-header">
-              <span className="message-role">Claude</span>
-              <span className="streaming-indicator">streaming...</span>
+          {/* Optimistic user message */}
+          {store.pendingUserMessage && (
+            <div className="message message-user">
+              <div className="message-header">
+                <span className="message-role">You</span>
+                <span className="message-time">just now</span>
+              </div>
+              <div className="message-content">{store.pendingUserMessage}</div>
             </div>
-            <div className="message-content markdown-body">
-              <Markdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeHighlight]}>
-                {store.streamingText}
-              </Markdown>
-            </div>
-          </div>
-        )}
+          )}
 
-        {store.sending && !store.streamingText && (
-          <div className="message message-assistant streaming">
-            <div className="message-header">
-              <span className="message-role">Claude</span>
-              <span className="streaming-indicator">thinking...</span>
+          {/* Live streaming response */}
+          {store.sending && store.streamingText && (
+            <div className="message message-assistant streaming">
+              <div className="message-header">
+                <span className="message-role">Claude</span>
+                <span className="streaming-indicator">streaming...</span>
+              </div>
+              <div className="message-content markdown-body">
+                <Markdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeHighlight]}>
+                  {store.streamingText}
+                </Markdown>
+              </div>
             </div>
-            <div className="message-content">
-              <span className="text-muted">Waiting for response...</span>
+          )}
+
+          {store.sending && !store.streamingText && (
+            <div className="message message-assistant streaming">
+              <div className="message-header">
+                <span className="message-role">Claude</span>
+                <span className="streaming-indicator">thinking...</span>
+              </div>
+              <div className="message-content">
+                <span className="text-muted">Waiting for response...</span>
+              </div>
             </div>
-          </div>
+          )}
+        </div>
+
+        {showScrollButton && (
+          <button className="scroll-to-bottom" onClick={scrollToBottom} title="Scroll to bottom">
+            &#x2193;
+          </button>
         )}
       </div>
 

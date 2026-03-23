@@ -37,15 +37,13 @@ export async function streamMessage(
     res.write(`data: ${JSON.stringify(data)}\n\n`);
   };
 
-  const args = [
-    '--resume', sessionId,
-    '--print',
-    '--output-format', 'stream-json',
-    '--verbose',
-    '-p', message,
-  ];
+  // Build the full command as a single string with proper quoting.
+  // We must use shell to resolve 'claude' from PATH, so we quote the
+  // message to prevent word-splitting.
+  const escapedMessage = message.replace(/"/g, '\\"');
+  const cmd = `claude --resume ${sessionId} --print --output-format stream-json --verbose -p "${escapedMessage}"`;
 
-  const proc: ChildProcess = spawn('claude', args, {
+  const proc: ChildProcess = spawn(cmd, [], {
     shell: true,
     cwd: projectPath,
     timeout: 300_000,
