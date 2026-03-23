@@ -48,18 +48,95 @@ export async function forkSessionAt(
   return res.json();
 }
 
-export async function sendMessageToSession(
+export interface StreamCallbacks {
+  onInit?: (data: { sessionId: string; model: string }) => void;
+  onText?: (text: string) => void;
+  onResult?: (data: { result: string; durationMs: number; cost: number }) => void;
+  onError?: (error: string) => void;
+  onDone?: () => void;
+}
+
+/**
+ * Send a message to a session via SSE streaming.
+ * Returns an abort function to cancel the request.
+ */
+export function streamMessageToSession(
   sessionId: string,
-  message: string
-): Promise<{ response: string; exitCode: number }> {
-  const res = await fetch(`${BASE}/sessions/${sessionId}/send`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ message }),
-  });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({ error: 'Send failed' }));
-    throw new Error(err.error || 'Send failed');
-  }
-  return res.json();
+  message: string,
+  callbacks: StreamCallbacks
+): () => void {
+  const controller = new AbortController();
+
+  (async () => {
+    try {
+      const res = await fetch(`${BASE}/sessions/${sessionId}/send`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message }),
+        signal: controller.signal,
+      });
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: 'Send failed' }));
+        callbacks.onError?.(err.error || `HTTP ${res.status}`);
+        return;
+      }
+
+      const reader = res.body?.getReader();
+      if (!reader) {
+        callbacks.onError?.('No response body');
+        return;
+      }
+
+      const decoder = new TextDecoder();
+      let buffer = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+
+        // Parse SSE events: "data: {...}\n\n"
+        const parts = buffer.split('\n\n');
+        buffer = parts.pop() ?? '';
+
+        for (const part of parts) {
+          const line = part.trim();
+          if (!line.startsWith('data: ')) continue;
+          const json = line.slice(6);
+          try {
+            const event = JSON.parse(json);
+            switch (event.type) {
+              case 'init':
+                callbacks.onInit?.(event);
+                break;
+              case 'text':
+                callbacks.onText?.(event.text);
+                break;
+              case 'result':
+                callbacks.onResult?.(event);
+                break;
+              case 'error':
+                callbacks.onError?.(event.error);
+                break;
+              case 'done':
+                callbacks.onDone?.();
+                break;
+            }
+          } catch {
+            // skip
+          }
+        }
+      }
+
+      callbacks.onDone?.();
+    } catch (err) {
+      if ((err as Error).name !== 'AbortError') {
+        callbacks.onError?.(err instanceof Error ? err.message : 'Unknown error');
+      }
+    }
+  })();
+
+  return () => controller.abort();
 }

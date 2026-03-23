@@ -1,4 +1,5 @@
-import { spawn } from 'node:child_process';
+import { spawn, type ChildProcess } from 'node:child_process';
+import type { Response } from 'express';
 import { findSessionProject } from './claude-data.js';
 
 export function getResumeCommand(sessionId: string): string {
@@ -6,48 +7,128 @@ export function getResumeCommand(sessionId: string): string {
 }
 
 /**
- * Send a message to a session using `claude --resume <id> --print -p "message"`.
- * Spawns claude from the session's original project directory (required — claude
- * scopes session lookup by cwd).
+ * Send a message to a session via `claude --resume` with streaming JSON output.
+ * Pipes structured events as SSE to the Express response.
+ *
+ * Events sent to client:
+ *   - { type: "init", ... }      — session initialized
+ *   - { type: "text", text: "" }  — streamed text chunk
+ *   - { type: "result", ... }     — final result with full response
+ *   - { type: "error", error: "" } — error message
  */
-export async function sendMessage(
+export async function streamMessage(
   sessionId: string,
-  message: string
-): Promise<{ response: string; exitCode: number }> {
+  message: string,
+  res: Response
+): Promise<void> {
   const projectPath = await findSessionProject(sessionId);
   if (!projectPath) {
     throw new Error(`Cannot determine project directory for session ${sessionId}`);
   }
 
-  return new Promise((resolve, reject) => {
-    const args = ['--resume', sessionId, '--print', '-p', message];
-    const proc = spawn('claude', args, {
-      shell: true,
-      cwd: projectPath,
-      timeout: 120_000,
-    });
+  // Set up SSE headers
+  res.writeHead(200, {
+    'Content-Type': 'text/event-stream',
+    'Cache-Control': 'no-cache',
+    Connection: 'keep-alive',
+  });
 
-    let stdout = '';
-    let stderr = '';
+  const sendEvent = (data: object) => {
+    res.write(`data: ${JSON.stringify(data)}\n\n`);
+  };
 
-    proc.stdout.on('data', (chunk: Buffer) => {
-      stdout += chunk.toString();
-    });
+  const args = [
+    '--resume', sessionId,
+    '--print',
+    '--output-format', 'stream-json',
+    '--verbose',
+    '-p', message,
+  ];
 
-    proc.stderr.on('data', (chunk: Buffer) => {
-      stderr += chunk.toString();
-    });
+  const proc: ChildProcess = spawn('claude', args, {
+    shell: true,
+    cwd: projectPath,
+    timeout: 300_000,
+  });
 
-    proc.on('error', (err) => {
-      reject(new Error(`Failed to spawn claude: ${err.message}`));
-    });
+  let buffer = '';
 
-    proc.on('close', (code) => {
-      if (code !== 0 && !stdout) {
-        reject(new Error(`claude exited with code ${code}: ${stderr}`));
-      } else {
-        resolve({ response: stdout.trim(), exitCode: code ?? 0 });
+  proc.stdout?.on('data', (chunk: Buffer) => {
+    buffer += chunk.toString();
+
+    // stream-json outputs one JSON object per line
+    const lines = buffer.split('\n');
+    buffer = lines.pop() ?? ''; // keep incomplete last line in buffer
+
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (!trimmed) continue;
+
+      try {
+        const event = JSON.parse(trimmed);
+
+        if (event.type === 'system' && event.subtype === 'init') {
+          sendEvent({ type: 'init', sessionId: event.session_id, model: event.model });
+        } else if (event.type === 'assistant') {
+          // Extract text content from the assistant message
+          const content = event.message?.content;
+          if (Array.isArray(content)) {
+            for (const block of content) {
+              if (block.type === 'text' && block.text) {
+                sendEvent({ type: 'text', text: block.text });
+              }
+            }
+          }
+        } else if (event.type === 'result') {
+          sendEvent({
+            type: 'result',
+            result: event.result,
+            durationMs: event.duration_ms,
+            cost: event.total_cost_usd,
+          });
+        }
+      } catch {
+        // Skip unparseable lines
       }
-    });
+    }
+  });
+
+  proc.stderr?.on('data', (chunk: Buffer) => {
+    const text = chunk.toString().trim();
+    // Filter out harmless stdin warnings from non-interactive mode
+    if (text && !text.includes('no stdin data received')) {
+      sendEvent({ type: 'error', error: text });
+    }
+  });
+
+  proc.on('error', (err) => {
+    sendEvent({ type: 'error', error: `Failed to spawn claude: ${err.message}` });
+    res.end();
+  });
+
+  proc.on('close', () => {
+    // Flush any remaining buffer
+    if (buffer.trim()) {
+      try {
+        const event = JSON.parse(buffer.trim());
+        if (event.type === 'result') {
+          sendEvent({
+            type: 'result',
+            result: event.result,
+            durationMs: event.duration_ms,
+            cost: event.total_cost_usd,
+          });
+        }
+      } catch {
+        // ignore
+      }
+    }
+    sendEvent({ type: 'done' });
+    res.end();
+  });
+
+  // Handle client disconnect
+  res.on('close', () => {
+    proc.kill();
   });
 }

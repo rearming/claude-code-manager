@@ -114,11 +114,39 @@ export const SessionDetail = observer(({ store }: Props) => {
             forking={store.forking}
           />
         ))}
+
+        {/* Live streaming response */}
+        {store.sending && store.streamingText && (
+          <div className="message message-assistant streaming">
+            <div className="message-header">
+              <span className="message-role">Claude</span>
+              <span className="streaming-indicator">streaming...</span>
+            </div>
+            <div className="message-content markdown-body">
+              <Markdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeHighlight]}>
+                {store.streamingText}
+              </Markdown>
+            </div>
+          </div>
+        )}
+
+        {store.sending && !store.streamingText && (
+          <div className="message message-assistant streaming">
+            <div className="message-header">
+              <span className="message-role">Claude</span>
+              <span className="streaming-indicator">thinking...</span>
+            </div>
+            <div className="message-content">
+              <span className="text-muted">Waiting for response...</span>
+            </div>
+          </div>
+        )}
       </div>
 
       <MessageInput
         onSend={(msg) => store.sendMessage(summary.sessionId, msg)}
         sending={store.sending}
+        onCancel={() => store.cancelSend()}
       />
     </div>
   );
@@ -207,10 +235,11 @@ function MessageBubble({ message, messageIndex, totalMessages, onFork, forking }
 
 interface MessageInputProps {
   onSend: (message: string) => void;
+  onCancel: () => void;
   sending: boolean;
 }
 
-function MessageInput({ onSend, sending }: MessageInputProps) {
+function MessageInput({ onSend, onCancel, sending }: MessageInputProps) {
   const [text, setText] = useState('');
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -226,6 +255,9 @@ function MessageInput({ onSend, sending }: MessageInputProps) {
       e.preventDefault();
       handleSubmit();
     }
+    if (e.key === 'Escape' && sending) {
+      onCancel();
+    }
   };
 
   return (
@@ -233,20 +265,26 @@ function MessageInput({ onSend, sending }: MessageInputProps) {
       <textarea
         ref={textareaRef}
         className="message-input"
-        placeholder={sending ? 'Claude is thinking...' : 'Send a message to this session...'}
+        placeholder={sending ? 'Claude is responding... (Esc to cancel)' : 'Send a message to this session... (Enter to send)'}
         value={text}
         onChange={(e) => setText(e.target.value)}
         onKeyDown={handleKeyDown}
         disabled={sending}
         rows={2}
       />
-      <button
-        className="send-button"
-        onClick={handleSubmit}
-        disabled={!text.trim() || sending}
-      >
-        {sending ? 'Sending...' : 'Send'}
-      </button>
+      {sending ? (
+        <button className="cancel-button" onClick={onCancel}>
+          Cancel
+        </button>
+      ) : (
+        <button
+          className="send-button"
+          onClick={handleSubmit}
+          disabled={!text.trim()}
+        >
+          Send
+        </button>
+      )}
     </div>
   );
 }

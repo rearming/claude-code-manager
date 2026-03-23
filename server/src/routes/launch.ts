@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { getResumeCommand, sendMessage } from '../services/launcher.js';
+import { getResumeCommand, streamMessage } from '../services/launcher.js';
 
 const router = Router();
 
@@ -15,12 +15,14 @@ router.post('/:id/send', async (req, res) => {
       res.status(400).json({ error: 'message is required' });
       return;
     }
-    const result = await sendMessage(req.params.id, message);
-    res.json(result);
+    await streamMessage(req.params.id, message, res);
   } catch (err) {
     console.error('Error sending message:', err);
     const msg = err instanceof Error ? err.message : 'Failed to send message';
-    res.status(500).json({ error: msg });
+    // Only send error JSON if headers haven't been sent (SSE not started)
+    if (!res.headersSent) {
+      res.status(500).json({ error: msg });
+    }
   }
 });
 

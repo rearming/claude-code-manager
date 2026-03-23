@@ -1,6 +1,6 @@
 import { makeAutoObservable, runInAction } from 'mobx';
 import type { SessionSummary, SessionDetail, ForkResult } from '../types';
-import { fetchSessions, fetchSessionDetail, resumeSession, forkSessionAt, sendMessageToSession } from '../api';
+import { fetchSessions, fetchSessionDetail, resumeSession, forkSessionAt, streamMessageToSession } from '../api';
 
 export class SessionStore {
   sessions: SessionSummary[] = [];
@@ -16,7 +16,8 @@ export class SessionStore {
   forkResult: ForkResult | null = null;
   forking = false;
   sending = false;
-  lastResponse: string | null = null;
+  streamingText = '';
+  abortStream: (() => void) | null = null;
 
   constructor() {
     makeAutoObservable(this);
@@ -138,7 +139,6 @@ export class SessionStore {
       runInAction(() => {
         this.forkResult = result;
         this.forking = false;
-        // Refresh session list to show the new forked session
         this.loadSessions();
       });
     } catch (e) {
@@ -149,22 +149,43 @@ export class SessionStore {
     }
   }
 
-  async sendMessage(sessionId: string, message: string) {
+  sendMessage(sessionId: string, message: string) {
     this.sending = true;
-    this.lastResponse = null;
-    try {
-      const result = await sendMessageToSession(sessionId, message);
-      runInAction(() => {
-        this.lastResponse = result.response;
-        this.sending = false;
-        // Reload the conversation to show the new messages
-        this.selectSession(sessionId);
-      });
-    } catch (e) {
-      runInAction(() => {
-        this.error = e instanceof Error ? e.message : 'Send failed';
-        this.sending = false;
-      });
+    this.streamingText = '';
+    this.error = null;
+
+    const abort = streamMessageToSession(sessionId, message, {
+      onText: (text) => {
+        runInAction(() => {
+          this.streamingText += text;
+        });
+      },
+      onError: (error) => {
+        runInAction(() => {
+          this.error = error;
+          this.sending = false;
+        });
+      },
+      onDone: () => {
+        runInAction(() => {
+          this.sending = false;
+          this.streamingText = '';
+          this.abortStream = null;
+          // Reload conversation to show the persisted messages
+          this.selectSession(sessionId);
+        });
+      },
+    });
+
+    this.abortStream = abort;
+  }
+
+  cancelSend() {
+    if (this.abortStream) {
+      this.abortStream();
+      this.abortStream = null;
+      this.sending = false;
+      this.streamingText = '';
     }
   }
 
@@ -173,6 +194,7 @@ export class SessionStore {
   }
 
   clearSelection() {
+    this.cancelSend();
     this.selectedSessionId = null;
     this.selectedDetail = null;
     this.resumeCommand = null;

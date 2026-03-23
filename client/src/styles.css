@@ -724,3 +724,42 @@ body {
   opacity: 0.5;
   cursor: not-allowed;
 }
+
+.cancel-button {
+  padding: 10px 20px;
+  background: transparent;
+  border: 1px solid var(--accent);
+  border-radius: 8px;
+  color: var(--accent);
+  font-weight: 600;
+  font-size: 14px;
+  cursor: pointer;
+  transition: all 0.15s;
+  white-space: nowrap;
+}
+
+.cancel-button:hover {
+  background: var(--accent);
+  color: white;
+}
+
+/* Streaming */
+.streaming {
+  border: 1px solid var(--border);
+  animation: pulse 2s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.85; }
+}
+
+.streaming-indicator {
+  color: var(--success);
+  font-size: 10px;
+  animation: blink 1s step-end infinite;
+}
+
+@keyframes blink {
+  50% { opacity: 0; }
+}
