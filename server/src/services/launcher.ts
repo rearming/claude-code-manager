@@ -1,4 +1,5 @@
 import { spawn, type ChildProcess } from 'node:child_process';
+import { EventEmitter } from 'node:events';
 import type { Response } from 'express';
 import { findSessionProject } from './claude-data.js';
 
@@ -6,20 +7,203 @@ export function getResumeCommand(sessionId: string): string {
   return `claude --resume ${sessionId}`;
 }
 
-/**
- * Send a message to a session via `claude --resume` with streaming JSON output.
- * Pipes structured events as SSE to the Express response.
- *
- * Events sent to client:
- *   - { type: "init", ... }      — session initialized
- *   - { type: "text", text: "" }  — streamed text chunk
- *   - { type: "result", ... }     — final result with full response
- *   - { type: "error", error: "" } — error message
- */
 export interface StreamOptions {
   dangerouslySkipPermissions?: boolean;
 }
 
+// ---------- Persistent Session Process ----------
+
+interface ParsedEvent {
+  type: string;
+  [key: string]: unknown;
+}
+
+/**
+ * Manages a persistent Claude CLI process using --input-format stream-json.
+ * The process stays alive between messages — new user messages are written to stdin.
+ */
+class SessionProcess extends EventEmitter {
+  proc: ChildProcess;
+  sessionId: string | null = null;
+  model: string | null = null;
+  buffer = '';
+  alive = true;
+  idleTimer: ReturnType<typeof setTimeout> | null = null;
+
+  private static IDLE_TIMEOUT = 5 * 60 * 1000; // 5 minutes
+
+  constructor(
+    private cwd: string,
+    private options: StreamOptions = {},
+    resumeSessionId?: string
+  ) {
+    super();
+
+    const args = [
+      '--print',
+      '--input-format', 'stream-json',
+      '--output-format', 'stream-json',
+      '--verbose',
+    ];
+    if (options.dangerouslySkipPermissions) {
+      args.push('--dangerously-skip-permissions');
+    }
+    if (resumeSessionId) {
+      args.push('--resume', resumeSessionId);
+    }
+
+    this.proc = spawn('claude', args, {
+      cwd,
+      stdio: ['pipe', 'pipe', 'pipe'],
+    });
+
+    this.proc.stdout?.on('data', (chunk: Buffer) => {
+      this.buffer += chunk.toString();
+
+      const lines = this.buffer.split('\n');
+      this.buffer = lines.pop() ?? '';
+
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed) continue;
+        this.handleLine(trimmed);
+      }
+    });
+
+    this.proc.stderr?.on('data', (chunk: Buffer) => {
+      const text = chunk.toString().trim();
+      if (text) {
+        this.emit('raw', `[stderr] ${text}`);
+        if (!text.includes('no stdin data received')) {
+          this.emit('error', text);
+        }
+      }
+    });
+
+    this.proc.on('error', (err) => {
+      this.alive = false;
+      this.emit('error', `Failed to spawn claude: ${err.message}`);
+      this.emit('close');
+    });
+
+    this.proc.on('close', () => {
+      this.alive = false;
+      this.clearIdleTimer();
+      // Flush remaining buffer
+      if (this.buffer.trim()) {
+        this.handleLine(this.buffer.trim());
+        this.buffer = '';
+      }
+      this.emit('close');
+    });
+
+    this.resetIdleTimer();
+  }
+
+  private handleLine(trimmed: string) {
+    try {
+      const event: ParsedEvent = JSON.parse(trimmed);
+
+      this.emit('raw', trimmed);
+
+      if (event.type === 'system' && event.subtype === 'init') {
+        this.sessionId = event.session_id as string;
+        this.model = event.model as string;
+        this.emit('init', { sessionId: this.sessionId, model: this.model });
+      } else if (event.type === 'assistant') {
+        const content = (event.message as { content?: Array<{ type: string; text?: string }> })?.content;
+        if (Array.isArray(content)) {
+          for (const block of content) {
+            if (block.type === 'text' && block.text) {
+              this.emit('text', block.text);
+            }
+          }
+        }
+      } else if (event.type === 'result') {
+        this.emit('result', {
+          result: event.result,
+          durationMs: event.duration_ms,
+          cost: event.total_cost_usd,
+        });
+        // After result, the turn is done — reset idle timer
+        this.resetIdleTimer();
+      }
+    } catch {
+      this.emit('raw', trimmed);
+    }
+  }
+
+  sendMessage(message: string) {
+    if (!this.alive) throw new Error('Process is dead');
+    this.clearIdleTimer();
+
+    const userMsg = JSON.stringify({
+      type: 'user',
+      message: {
+        role: 'user',
+        content: [{ type: 'text', text: message }],
+      },
+    });
+
+    this.proc.stdin?.write(userMsg + '\n');
+  }
+
+  kill() {
+    this.clearIdleTimer();
+    if (this.alive) {
+      this.alive = false;
+      this.proc.stdin?.end();
+      this.proc.kill();
+    }
+  }
+
+  private resetIdleTimer() {
+    this.clearIdleTimer();
+    this.idleTimer = setTimeout(() => {
+      console.log(`[SessionProcess] Idle timeout for session ${this.sessionId}, killing`);
+      this.kill();
+    }, SessionProcess.IDLE_TIMEOUT);
+  }
+
+  private clearIdleTimer() {
+    if (this.idleTimer) {
+      clearTimeout(this.idleTimer);
+      this.idleTimer = null;
+    }
+  }
+}
+
+// ---------- Process Pool ----------
+
+const processPool = new Map<string, SessionProcess>();
+
+function getOrCreateProcess(
+  sessionKey: string,
+  cwd: string,
+  options: StreamOptions,
+  resumeSessionId?: string
+): SessionProcess {
+  const existing = processPool.get(sessionKey);
+  if (existing?.alive) return existing;
+
+  // Clean up dead entry
+  if (existing) processPool.delete(sessionKey);
+
+  const proc = new SessionProcess(cwd, options, resumeSessionId);
+  processPool.set(sessionKey, proc);
+
+  proc.on('close', () => {
+    processPool.delete(sessionKey);
+  });
+
+  return proc;
+}
+
+// ---------- Public API ----------
+
+/**
+ * Send a message to an existing session. Reuses a persistent process if one exists.
+ */
 export async function streamMessage(
   sessionId: string,
   message: string,
@@ -31,16 +215,12 @@ export async function streamMessage(
     throw new Error(`Cannot determine project directory for session ${sessionId}`);
   }
 
-  const escapedMessage = message.replace(/"/g, '\\"');
-  const permFlag = options.dangerouslySkipPermissions ? ' --dangerously-skip-permissions' : '';
-  const cmd = `claude --resume ${sessionId} --print --output-format stream-json --verbose${permFlag} -p "${escapedMessage}"`;
-
-  streamClaude(cmd, projectPath, res);
+  const proc = getOrCreateProcess(sessionId, projectPath, options, sessionId);
+  pipeProcessToSSE(proc, message, res);
 }
 
 /**
  * Start a brand-new session in a given project directory.
- * Returns the new session ID via the SSE init event.
  */
 export async function streamNewSession(
   message: string,
@@ -48,15 +228,30 @@ export async function streamNewSession(
   res: Response,
   options: StreamOptions = {}
 ): Promise<void> {
-  const escapedMessage = message.replace(/"/g, '\\"');
-  const permFlag = options.dangerouslySkipPermissions ? ' --dangerously-skip-permissions' : '';
-  const cmd = `claude --print --output-format stream-json --verbose${permFlag} -p "${escapedMessage}"`;
+  // Use a temp key; will be replaced once we get the session ID from init
+  const tempKey = `new-${Date.now()}`;
+  const proc = new SessionProcess(projectPath, options);
 
-  streamClaude(cmd, projectPath, res);
+  // Once we know the real session ID, re-key in the pool
+  proc.once('init', ({ sessionId }: { sessionId: string }) => {
+    processPool.delete(tempKey);
+    // Only store if there isn't already one (race guard)
+    if (!processPool.has(sessionId)) {
+      processPool.set(sessionId, proc);
+      proc.on('close', () => processPool.delete(sessionId));
+    }
+  });
+  processPool.set(tempKey, proc);
+  proc.on('close', () => processPool.delete(tempKey));
+
+  pipeProcessToSSE(proc, message, res);
 }
 
-function streamClaude(cmd: string, cwd: string, res: Response): void {
-  // Set up SSE headers
+/**
+ * Pipe a SessionProcess's events to an SSE response for a single turn.
+ * After the result arrives, the SSE connection closes but the process stays alive.
+ */
+function pipeProcessToSSE(proc: SessionProcess, message: string, res: Response) {
   res.writeHead(200, {
     'Content-Type': 'text/event-stream',
     'Cache-Control': 'no-cache',
@@ -64,101 +259,91 @@ function streamClaude(cmd: string, cwd: string, res: Response): void {
   });
 
   const sendEvent = (data: object) => {
-    res.write(`data: ${JSON.stringify(data)}\n\n`);
+    if (!res.writableEnded) {
+      res.write(`data: ${JSON.stringify(data)}\n\n`);
+    }
   };
 
-  const proc: ChildProcess = spawn(cmd, [], {
-    shell: true,
-    cwd,
-    timeout: 300_000,
-  });
+  const onInit = (data: { sessionId: string; model: string }) => {
+    sendEvent({ type: 'init', sessionId: data.sessionId, model: data.model });
+  };
 
-  let buffer = '';
+  const onText = (text: string) => {
+    sendEvent({ type: 'text', text });
+  };
 
-  proc.stdout?.on('data', (chunk: Buffer) => {
-    buffer += chunk.toString();
+  const onRaw = (data: string) => {
+    sendEvent({ type: 'raw', data });
+  };
 
-    // stream-json outputs one JSON object per line
-    const lines = buffer.split('\n');
-    buffer = lines.pop() ?? ''; // keep incomplete last line in buffer
-
-    for (const line of lines) {
-      const trimmed = line.trim();
-      if (!trimmed) continue;
-
-      try {
-        const event = JSON.parse(trimmed);
-
-        // Always forward the raw JSON line
-        sendEvent({ type: 'raw', data: trimmed });
-
-        if (event.type === 'system' && event.subtype === 'init') {
-          sendEvent({ type: 'init', sessionId: event.session_id, model: event.model });
-        } else if (event.type === 'assistant') {
-          // Extract text content from the assistant message
-          const content = event.message?.content;
-          if (Array.isArray(content)) {
-            for (const block of content) {
-              if (block.type === 'text' && block.text) {
-                sendEvent({ type: 'text', text: block.text });
-              }
-            }
-          }
-        } else if (event.type === 'result') {
-          sendEvent({
-            type: 'result',
-            result: event.result,
-            durationMs: event.duration_ms,
-            cost: event.total_cost_usd,
-          });
-        }
-      } catch {
-        // Forward unparseable lines as raw too
-        sendEvent({ type: 'raw', data: trimmed });
-      }
-    }
-  });
-
-  proc.stderr?.on('data', (chunk: Buffer) => {
-    const text = chunk.toString().trim();
-    if (text) {
-      // Always forward stderr as raw
-      sendEvent({ type: 'raw', data: `[stderr] ${text}` });
-      // Filter out harmless stdin warnings from non-interactive mode
-      if (!text.includes('no stdin data received')) {
-        sendEvent({ type: 'error', error: text });
-      }
-    }
-  });
-
-  proc.on('error', (err) => {
-    sendEvent({ type: 'error', error: `Failed to spawn claude: ${err.message}` });
+  const onResult = (data: { result: string; durationMs: number; cost: number }) => {
+    sendEvent({ type: 'result', ...data });
+    sendEvent({ type: 'done' });
+    cleanup();
     res.end();
+  };
+
+  const onError = (error: string) => {
+    sendEvent({ type: 'error', error });
+  };
+
+  const onClose = () => {
+    // Process died mid-turn
+    sendEvent({ type: 'done' });
+    cleanup();
+    if (!res.writableEnded) res.end();
+  };
+
+  const cleanup = () => {
+    proc.removeListener('init', onInit);
+    proc.removeListener('text', onText);
+    proc.removeListener('raw', onRaw);
+    proc.removeListener('result', onResult);
+    proc.removeListener('error', onError);
+    proc.removeListener('close', onClose);
+  };
+
+  proc.on('init', onInit);
+  proc.on('text', onText);
+  proc.on('raw', onRaw);
+  proc.on('result', onResult);
+  proc.on('error', onError);
+  proc.on('close', onClose);
+
+  // If client disconnects mid-stream, clean up listeners (but DON'T kill the process)
+  res.on('close', () => {
+    cleanup();
   });
 
-  proc.on('close', () => {
-    // Flush any remaining buffer
-    if (buffer.trim()) {
-      try {
-        const event = JSON.parse(buffer.trim());
-        if (event.type === 'result') {
-          sendEvent({
-            type: 'result',
-            result: event.result,
-            durationMs: event.duration_ms,
-            cost: event.total_cost_usd,
-          });
-        }
-      } catch {
-        // ignore
-      }
-    }
+  // Send the message
+  try {
+    proc.sendMessage(message);
+  } catch (err) {
+    sendEvent({ type: 'error', error: err instanceof Error ? err.message : 'Process is dead' });
     sendEvent({ type: 'done' });
     res.end();
-  });
+    cleanup();
+  }
+}
 
-  // Handle client disconnect
-  res.on('close', () => {
+/**
+ * Get info about active persistent processes (for debugging).
+ */
+export function getActiveProcesses(): Array<{ sessionId: string | null; alive: boolean }> {
+  return Array.from(processPool.values()).map((p) => ({
+    sessionId: p.sessionId,
+    alive: p.alive,
+  }));
+}
+
+/**
+ * Kill a specific session's persistent process.
+ */
+export function killSessionProcess(sessionId: string): boolean {
+  const proc = processPool.get(sessionId);
+  if (proc) {
     proc.kill();
-  });
+    return true;
+  }
+  return false;
 }

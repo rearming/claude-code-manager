@@ -1,7 +1,24 @@
 import { Router } from 'express';
-import { getResumeCommand, streamMessage, streamNewSession } from '../services/launcher.js';
+import {
+  getResumeCommand,
+  streamMessage,
+  streamNewSession,
+  getActiveProcesses,
+  killSessionProcess,
+} from '../services/launcher.js';
 
 const router = Router();
+
+// Debug: list active persistent processes
+router.get('/processes', (_req, res) => {
+  res.json(getActiveProcesses());
+});
+
+// Kill a session's persistent process
+router.delete('/:id/process', (req, res) => {
+  const killed = killSessionProcess(req.params.id);
+  res.json({ killed });
+});
 
 router.post('/new', async (req, res) => {
   try {

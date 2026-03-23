@@ -191,6 +191,7 @@ export class SessionStore {
     this.selectedDetail = null;
     this.detailLoading = true;
     this.resumeCommand = null;
+    this.streamingText = '';
     try {
       const detail = await fetchSessionDetail(sessionId);
       runInAction(() => {
@@ -200,6 +201,28 @@ export class SessionStore {
     } catch (e) {
       runInAction(() => {
         this.error = e instanceof Error ? e.message : 'Unknown error';
+        this.detailLoading = false;
+      });
+    }
+  }
+
+  /**
+   * Reload a session without clearing streamingText until the data arrives.
+   * This prevents the UI from going blank between stream end and data load.
+   */
+  async reloadSession(sessionId: string) {
+    this.selectedSessionId = sessionId;
+    try {
+      const detail = await fetchSessionDetail(sessionId);
+      runInAction(() => {
+        this.selectedDetail = detail;
+        this.streamingText = '';
+        this.detailLoading = false;
+      });
+    } catch (e) {
+      runInAction(() => {
+        this.error = e instanceof Error ? e.message : 'Unknown error';
+        this.streamingText = '';
         this.detailLoading = false;
       });
     }
@@ -278,6 +301,13 @@ export class SessionStore {
           this.appendRawLine(data);
         });
       },
+      onResult: (data) => {
+        runInAction(() => {
+          if (data.result) {
+            this.streamingText = data.result;
+          }
+        });
+      },
       onError: (error) => {
         runInAction(() => {
           this.error = error;
@@ -288,7 +318,6 @@ export class SessionStore {
       onDone: () => {
         runInAction(() => {
           this.sending = false;
-          this.streamingText = '';
           this.pendingUserMessage = null;
           this.abortStream = null;
           const sid = this.newSessionId;
@@ -296,7 +325,7 @@ export class SessionStore {
           this.loadSessions();
           if (sid) {
             this.scrollToBottomOnLoad = true;
-            this.selectSession(sid);
+            this.reloadSession(sid);
           }
         });
       },
@@ -323,6 +352,14 @@ export class SessionStore {
           this.appendRawLine(data);
         });
       },
+      onResult: (data) => {
+        runInAction(() => {
+          // Use the full result text to ensure nothing is missed
+          if (data.result) {
+            this.streamingText = data.result;
+          }
+        });
+      },
       onError: (error) => {
         runInAction(() => {
           this.error = error;
@@ -333,12 +370,11 @@ export class SessionStore {
       onDone: () => {
         runInAction(() => {
           this.sending = false;
-          this.streamingText = '';
           this.pendingUserMessage = null;
           this.abortStream = null;
           this.scrollToBottomOnLoad = true;
-          // Reload conversation to show the persisted messages
-          this.selectSession(sessionId);
+          // Keep streamingText visible until reload completes
+          this.reloadSession(sessionId);
         });
       },
     });

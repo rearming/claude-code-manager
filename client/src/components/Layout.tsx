@@ -16,7 +16,8 @@ interface Props {
 
 export const Layout = observer(({ store }: Props) => {
   // Show streaming view when a new session is being created (no selectedDetail yet)
-  const showNewSessionStreaming = !store.selectedDetail && store.sending;
+  // Also keep showing while streamingText is set (between stream end and session reload)
+  const showNewSessionStreaming = !store.selectedDetail && (store.sending || store.streamingText);
 
   return (
     <div className="layout">

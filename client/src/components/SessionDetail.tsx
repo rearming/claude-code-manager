@@ -190,12 +190,12 @@ export const SessionDetail = observer(({ store }: Props) => {
             </div>
           )}
 
-          {/* Live streaming response */}
-          {store.sending && store.streamingText && (
-            <div className="message message-assistant streaming">
+          {/* Live streaming response (stays visible until session reloads) */}
+          {store.streamingText && (
+            <div className={`message message-assistant ${store.sending ? 'streaming' : ''}`}>
               <div className="message-header">
                 <span className="message-role">Claude</span>
-                <span className="streaming-indicator">streaming...</span>
+                {store.sending && <span className="streaming-indicator">streaming...</span>}
               </div>
               <div className="message-content markdown-body">
                 <Markdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeHighlight]}>
