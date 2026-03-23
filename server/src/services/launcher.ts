@@ -16,10 +16,15 @@ export function getResumeCommand(sessionId: string): string {
  *   - { type: "result", ... }     — final result with full response
  *   - { type: "error", error: "" } — error message
  */
+export interface StreamOptions {
+  dangerouslySkipPermissions?: boolean;
+}
+
 export async function streamMessage(
   sessionId: string,
   message: string,
-  res: Response
+  res: Response,
+  options: StreamOptions = {}
 ): Promise<void> {
   const projectPath = await findSessionProject(sessionId);
   if (!projectPath) {
@@ -41,7 +46,8 @@ export async function streamMessage(
   // We must use shell to resolve 'claude' from PATH, so we quote the
   // message to prevent word-splitting.
   const escapedMessage = message.replace(/"/g, '\\"');
-  const cmd = `claude --resume ${sessionId} --print --output-format stream-json --verbose -p "${escapedMessage}"`;
+  const permFlag = options.dangerouslySkipPermissions ? ' --dangerously-skip-permissions' : '';
+  const cmd = `claude --resume ${sessionId} --print --output-format stream-json --verbose${permFlag} -p "${escapedMessage}"`;
 
   const proc: ChildProcess = spawn(cmd, [], {
     shell: true,

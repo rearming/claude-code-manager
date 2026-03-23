@@ -63,6 +63,7 @@ export interface StreamCallbacks {
 export function streamMessageToSession(
   sessionId: string,
   message: string,
+  dangerouslySkipPermissions: boolean,
   callbacks: StreamCallbacks
 ): () => void {
   const controller = new AbortController();
@@ -72,7 +73,7 @@ export function streamMessageToSession(
       const res = await fetch(`${BASE}/sessions/${sessionId}/send`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message }),
+        body: JSON.stringify({ message, dangerouslySkipPermissions }),
         signal: controller.signal,
       });
 

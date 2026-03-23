@@ -7,10 +7,12 @@ const SCROLL_POSITIONS_KEY = 'ccm-scroll-positions';
 
 interface Settings {
   autoScrollOnNewMessages: boolean;
+  dangerouslySkipPermissions: boolean;
 }
 
 const defaultSettings: Settings = {
   autoScrollOnNewMessages: true,
+  dangerouslySkipPermissions: false,
 };
 
 function loadSettings(): Settings {
@@ -61,6 +63,11 @@ export class SessionStore {
 
   setAutoScroll(value: boolean) {
     this.settings.autoScrollOnNewMessages = value;
+    this.persistSettings();
+  }
+
+  setDangerouslySkipPermissions(value: boolean) {
+    this.settings.dangerouslySkipPermissions = value;
     this.persistSettings();
   }
 
@@ -215,7 +222,7 @@ export class SessionStore {
     this.pendingUserMessage = message;
     this.error = null;
 
-    const abort = streamMessageToSession(sessionId, message, {
+    const abort = streamMessageToSession(sessionId, message, this.settings.dangerouslySkipPermissions, {
       onText: (text) => {
         runInAction(() => {
           this.streamingText += text;

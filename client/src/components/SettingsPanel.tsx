@@ -30,6 +30,23 @@ export const SettingsPanel = observer(({ store }: Props) => {
           <p className="settings-description">
             Automatically scroll to the bottom when new messages arrive or during streaming responses.
           </p>
+
+          <div style={{ marginTop: 20 }}>
+            <label className="settings-toggle">
+              <input
+                type="checkbox"
+                checked={store.settings.dangerouslySkipPermissions}
+                onChange={(e) => store.setDangerouslySkipPermissions(e.target.checked)}
+              />
+              <span className="toggle-slider" />
+              <span className="toggle-label">Auto-approve tool calls</span>
+            </label>
+            <p className="settings-description">
+              Skip permission prompts for all tool calls (--dangerously-skip-permissions).
+              Required for sending messages from this UI since there is no approval interface.
+              Only use in trusted environments.
+            </p>
+          </div>
         </div>
       </div>
     </div>

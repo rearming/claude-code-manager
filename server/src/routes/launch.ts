@@ -10,12 +10,12 @@ router.post('/:id/resume', (req, res) => {
 
 router.post('/:id/send', async (req, res) => {
   try {
-    const { message } = req.body;
+    const { message, dangerouslySkipPermissions } = req.body;
     if (!message || typeof message !== 'string') {
       res.status(400).json({ error: 'message is required' });
       return;
     }
-    await streamMessage(req.params.id, message, res);
+    await streamMessage(req.params.id, message, res, { dangerouslySkipPermissions: !!dangerouslySkipPermissions });
   } catch (err) {
     console.error('Error sending message:', err);
     const msg = err instanceof Error ? err.message : 'Failed to send message';
