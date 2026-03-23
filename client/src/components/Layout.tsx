@@ -3,6 +3,7 @@ import type { SessionStore } from '../stores/SessionStore';
 import { SearchBar } from './SearchBar';
 import { SessionList } from './SessionList';
 import { SessionDetail } from './SessionDetail';
+import { SettingsPanel } from './SettingsPanel';
 
 interface Props {
   store: SessionStore;
@@ -14,6 +15,13 @@ export const Layout = observer(({ store }: Props) => {
       <aside className="sidebar">
         <div className="sidebar-header">
           <h1>Claude Code Manager</h1>
+          <button
+            className="settings-button"
+            onClick={() => store.toggleSettings()}
+            title="Settings"
+          >
+            &#x2699;
+          </button>
         </div>
         <SearchBar store={store} />
         <SessionList store={store} />
@@ -31,6 +39,7 @@ export const Layout = observer(({ store }: Props) => {
           </div>
         )}
       </main>
+      <SettingsPanel store={store} />
     </div>
   );
 });
