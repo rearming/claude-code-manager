@@ -15,7 +15,7 @@ import { VisuallyHidden } from '@radix-ui/react-visually-hidden';
 import AnnotationCanvas from './AnnotationCanvas';
 import type { DrawCommand } from './AnnotationCanvas';
 import { cacheImage, saveAnnotatedImage } from '../api';
-import type { SessionStore, StreamingToolCall } from '../stores/SessionStore';
+import type { SessionStore, StreamingToolCall, StreamingBlock } from '../stores/SessionStore';
 import type { ConversationMessage, ToolCallSummary, ImageAttachment } from '../types';
 
 interface Props {
@@ -78,7 +78,7 @@ export const SessionDetail = observer(({ store }: Props) => {
     if (el && isNearBottom()) {
       el.scrollTop = el.scrollHeight;
     }
-  }, [store.streamingText, store.streamingToolCalls.length, store.sending, store.settings.autoScrollOnNewMessages, isNearBottom]);
+  }, [store.streamingText, store.streamingToolCalls.length, store.streamingBlocks.length, store.sending, store.settings.autoScrollOnNewMessages, isNearBottom]);
 
   useEffect(() => {
     if (store.pendingUserMessage && store.settings.autoScrollOnNewMessages) {
@@ -203,7 +203,9 @@ export const SessionDetail = observer(({ store }: Props) => {
             </div>
           )}
 
-          {store.streamingText && (
+          {store.streamingBlocks.length > 0 ? (
+            <StreamingBlocksView blocks={store.streamingBlocks} sending={store.sending} />
+          ) : store.streamingText ? (
             <div className="p-4 border border-border bg-assistant-bg mr-6">
               <div className="flex items-center gap-2 mb-2">
                 <span className="text-xs font-bold text-zinc-300 uppercase tracking-wide">claude</span>
@@ -215,13 +217,9 @@ export const SessionDetail = observer(({ store }: Props) => {
                 </Markdown>
               </div>
             </div>
-          )}
+          ) : null}
 
-          {store.sending && store.streamingToolCalls.length > 0 && (
-            <StreamingToolCallsView toolCalls={store.streamingToolCalls} />
-          )}
-
-          {store.sending && !store.streamingText && store.streamingToolCalls.length === 0 && (
+          {store.sending && !store.streamingText && store.streamingBlocks.length === 0 && (
             <div className="p-4 border border-border bg-assistant-bg mr-6">
               <div className="flex items-center gap-2 mb-2">
                 <span className="text-xs font-bold text-zinc-300 uppercase tracking-wide">claude</span>
@@ -296,6 +294,51 @@ function getStreamingToolSummary(tc: StreamingToolCall): string {
   const firstStr = vals.find(v => typeof v === 'string');
   return typeof firstStr === 'string' ? firstStr.slice(0, 80) : '';
 }
+
+const StreamingBlocksView = observer(({ blocks, sending }: { blocks: StreamingBlock[]; sending: boolean }) => {
+  // Group consecutive tool_use blocks together for compact display
+  const groups: Array<{ type: 'text'; text: string } | { type: 'tools'; tools: StreamingBlock[] }> = [];
+  for (const block of blocks) {
+    if (block.type === 'text') {
+      if (block.text) {
+        groups.push({ type: 'text', text: block.text });
+      }
+    } else {
+      const last = groups[groups.length - 1];
+      if (last && last.type === 'tools') {
+        last.tools.push(block);
+      } else {
+        groups.push({ type: 'tools', tools: [block] });
+      }
+    }
+  }
+
+  return (
+    <>
+      {groups.map((group, i) => {
+        if (group.type === 'text') {
+          return (
+            <div key={`text-${i}`} className="p-4 border border-border bg-assistant-bg mr-6">
+              <div className="flex items-center gap-2 mb-2">
+                <span className="text-xs font-bold text-zinc-300 uppercase tracking-wide">claude</span>
+                {sending && i === groups.length - 1 && <span className="text-xs text-green-500 animate-pulse">streaming...</span>}
+              </div>
+              <div className="text-sm text-zinc-300 markdown-body">
+                <Markdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeHighlight]}>
+                  {group.text}
+                </Markdown>
+              </div>
+            </div>
+          );
+        }
+        const toolCalls = group.tools.filter((b): b is Extract<StreamingBlock, { type: 'tool_use' }> => b.type === 'tool_use');
+        return (
+          <StreamingToolCallsView key={`tools-${i}`} toolCalls={toolCalls} />
+        );
+      })}
+    </>
+  );
+});
 
 function StreamingToolCallsView({ toolCalls }: { toolCalls: StreamingToolCall[] }) {
   return (

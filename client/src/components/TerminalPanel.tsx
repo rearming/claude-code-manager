@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback } from 'react';
+import { useRef, useEffect } from 'react';
 import { observer } from 'mobx-react-lite';
 import { X, Trash2, Send } from 'lucide-react';
 import { Button } from '@/components/shadcn/ui/button';
@@ -9,9 +9,7 @@ interface Props {
 }
 
 export const TerminalPanel = observer(({ store }: Props) => {
-  const [width, setWidth] = useState(480);
   const outputRef = useRef<HTMLDivElement>(null);
-  const dragging = useRef(false);
 
   useEffect(() => {
     const el = outputRef.current;
@@ -34,38 +32,8 @@ export const TerminalPanel = observer(({ store }: Props) => {
     }
   };
 
-  const handleMouseDown = useCallback((e: React.MouseEvent) => {
-    e.preventDefault();
-    dragging.current = true;
-    const startX = e.clientX;
-    const startWidth = width;
-
-    const onMouseMove = (ev: MouseEvent) => {
-      if (!dragging.current) return;
-      const delta = startX - ev.clientX;
-      setWidth(Math.max(300, Math.min(900, startWidth + delta)));
-    };
-
-    const onMouseUp = () => {
-      dragging.current = false;
-      document.removeEventListener('mousemove', onMouseMove);
-      document.removeEventListener('mouseup', onMouseUp);
-    };
-
-    document.addEventListener('mousemove', onMouseMove);
-    document.addEventListener('mouseup', onMouseUp);
-  }, [width]);
-
-  if (!store.showTerminal) return null;
-
   return (
-    <div className="border-l border-border bg-background flex flex-col" style={{ width }}>
-      {/* resize handle */}
-      <div
-        className="absolute left-0 top-0 bottom-0 w-1 cursor-col-resize hover:bg-zinc-600 transition-colors"
-        onMouseDown={handleMouseDown}
-      />
-
+    <div className="bg-background flex flex-col h-full">
       {/* header */}
       <div className="px-4 py-2.5 border-b border-border flex items-center justify-between">
         <span className="text-sm font-bold text-zinc-300">raw terminal</span>

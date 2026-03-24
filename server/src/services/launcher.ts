@@ -28,9 +28,12 @@ class SessionProcess extends EventEmitter {
   model: string | null = null;
   buffer = '';
   alive = true;
+  streaming = false;
   idleTimer: ReturnType<typeof setTimeout> | null = null;
   /** Track whether we've seen content_block_delta events for text dedup */
   private seenContentDeltas = false;
+  /** Buffer of SSE-ready events for the current streaming turn (for reconnection) */
+  private turnEventBuffer: Array<{ type: string; [key: string]: unknown }> = [];
 
   private static IDLE_TIMEOUT = 5 * 60 * 1000; // 5 minutes
 
@@ -90,6 +93,7 @@ class SessionProcess extends EventEmitter {
 
     this.proc.on('close', () => {
       this.alive = false;
+      this.streaming = false;
       this.clearIdleTimer();
       // Flush remaining buffer
       if (this.buffer.trim()) {
@@ -107,17 +111,21 @@ class SessionProcess extends EventEmitter {
       const event: ParsedEvent = JSON.parse(trimmed);
 
       this.emit('raw', trimmed);
+      this.bufferEvent({ type: 'raw', data: trimmed });
 
       if (event.type === 'system' && event.subtype === 'init') {
         this.sessionId = event.session_id as string;
         this.model = event.model as string;
-        this.emit('init', { sessionId: this.sessionId, model: this.model });
+        const initData = { sessionId: this.sessionId, model: this.model };
+        this.emit('init', initData);
+        this.bufferEvent({ type: 'init', ...initData });
       } else if (event.type === 'content_block_delta') {
         // Real-time text streaming from content block deltas
         const delta = event.delta as { type?: string; text?: string } | undefined;
         if (delta?.type === 'text_delta' && delta.text) {
           this.seenContentDeltas = true;
           this.emit('text', delta.text);
+          this.bufferEvent({ type: 'text', text: delta.text });
         }
       } else if (event.type === 'assistant') {
         // Fallback text extraction from complete assistant messages
@@ -128,23 +136,47 @@ class SessionProcess extends EventEmitter {
             for (const block of content) {
               if (block.type === 'text' && block.text) {
                 this.emit('text', block.text);
+                this.bufferEvent({ type: 'text', text: block.text });
               }
             }
           }
         }
       } else if (event.type === 'result') {
-        this.emit('result', {
+        const resultData = {
           result: event.result,
           durationMs: event.duration_ms,
           cost: event.total_cost_usd,
-        });
+        };
+        this.emit('result', resultData);
+        this.bufferEvent({ type: 'result', ...resultData });
         this.seenContentDeltas = false;
+        this.streaming = false;
         // After result, the turn is done — reset idle timer
         this.resetIdleTimer();
       }
     } catch {
       this.emit('raw', trimmed);
+      this.bufferEvent({ type: 'raw', data: trimmed });
     }
+  }
+
+  private bufferEvent(event: { type: string; [key: string]: unknown }) {
+    this.turnEventBuffer.push(event);
+    // Cap buffer size to prevent unbounded growth
+    if (this.turnEventBuffer.length > 10000) {
+      this.turnEventBuffer = this.turnEventBuffer.slice(-8000);
+    }
+  }
+
+  /** Start a new streaming turn: clear buffer and set streaming flag */
+  startTurn() {
+    this.turnEventBuffer = [];
+    this.streaming = true;
+  }
+
+  /** Get buffered events for the current turn (for reconnection) */
+  getBufferedEvents(): Array<{ type: string; [key: string]: unknown }> {
+    return this.turnEventBuffer;
   }
 
   sendMessage(message: string, images?: Array<{ mediaType: string; data: string }>) {
@@ -357,6 +389,7 @@ function pipeProcessToSSE(proc: SessionProcess, message: string, res: Response, 
 
   // Send the message
   try {
+    proc.startTurn();
     proc.sendMessage(message, images);
   } catch (err) {
     sendEvent({ type: 'error', error: err instanceof Error ? err.message : 'Process is dead' });
@@ -364,6 +397,78 @@ function pipeProcessToSSE(proc: SessionProcess, message: string, res: Response, 
     res.end();
     cleanup();
   }
+}
+
+/**
+ * Subscribe to an already-running session's stream.
+ * Replays buffered events from the current turn, then pipes live events.
+ * Returns false if the session is not currently streaming.
+ */
+export function subscribeToSession(sessionId: string, res: Response): boolean {
+  const proc = processPool.get(sessionId);
+  if (!proc?.alive || !proc.streaming) {
+    return false;
+  }
+
+  res.writeHead(200, {
+    'Content-Type': 'text/event-stream',
+    'Cache-Control': 'no-cache',
+    Connection: 'keep-alive',
+  });
+
+  const sendEvent = (data: object) => {
+    if (!res.writableEnded) {
+      res.write(`data: ${JSON.stringify(data)}\n\n`);
+    }
+  };
+
+  // Replay buffered events so the client catches up
+  for (const event of proc.getBufferedEvents()) {
+    sendEvent(event);
+  }
+
+  // Pipe live events going forward
+  const onText = (text: string) => sendEvent({ type: 'text', text });
+  const onRaw = (data: string) => sendEvent({ type: 'raw', data });
+  const onResult = (data: { result: string; durationMs: number; cost: number }) => {
+    sendEvent({ type: 'result', ...data });
+    sendEvent({ type: 'done' });
+    cleanup();
+    res.end();
+  };
+  const onError = (error: string) => sendEvent({ type: 'error', error });
+  const onClose = () => {
+    sendEvent({ type: 'done' });
+    cleanup();
+    if (!res.writableEnded) res.end();
+  };
+
+  const cleanup = () => {
+    proc.removeListener('text', onText);
+    proc.removeListener('raw', onRaw);
+    proc.removeListener('result', onResult);
+    proc.removeListener('error', onError);
+    proc.removeListener('close', onClose);
+  };
+
+  proc.on('text', onText);
+  proc.on('raw', onRaw);
+  proc.on('result', onResult);
+  proc.on('error', onError);
+  proc.on('close', onClose);
+
+  res.on('close', () => cleanup());
+
+  return true;
+}
+
+/**
+ * Get the status of a session's process.
+ */
+export function getSessionStatus(sessionId: string): { alive: boolean; streaming: boolean } {
+  const proc = processPool.get(sessionId);
+  if (!proc) return { alive: false, streaming: false };
+  return { alive: proc.alive, streaming: proc.streaming };
 }
 
 /**

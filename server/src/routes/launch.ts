@@ -5,6 +5,8 @@ import {
   streamNewSession,
   getActiveProcesses,
   killSessionProcess,
+  getSessionStatus,
+  subscribeToSession,
 } from '../services/launcher.js';
 
 const router = Router();
@@ -18,6 +20,19 @@ router.get('/processes', (_req, res) => {
 router.delete('/:id/process', (req, res) => {
   const killed = killSessionProcess(req.params.id);
   res.json({ killed });
+});
+
+// Check if a session is currently streaming
+router.get('/:id/status', (req, res) => {
+  res.json(getSessionStatus(req.params.id));
+});
+
+// Subscribe to an already-streaming session (reconnect after page reload)
+router.get('/:id/subscribe', (req, res) => {
+  const attached = subscribeToSession(req.params.id, res);
+  if (!attached) {
+    res.status(204).end();
+  }
 });
 
 router.post('/new', async (req, res) => {

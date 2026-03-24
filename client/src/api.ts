@@ -100,6 +100,107 @@ export function streamMessageToSession(
   return streamSSE(`${BASE}/sessions/${sessionId}/send`, { message, dangerouslySkipPermissions, images }, cbs);
 }
 
+/**
+ * Check if a session is currently streaming on the server.
+ */
+export async function fetchSessionStatus(
+  sessionId: string
+): Promise<{ alive: boolean; streaming: boolean }> {
+  const res = await fetch(`${BASE}/sessions/${sessionId}/status`);
+  if (!res.ok) return { alive: false, streaming: false };
+  return res.json();
+}
+
+/**
+ * Subscribe to an already-streaming session's events (reconnect after reload).
+ * Returns an abort function, or null if the session isn't streaming (204).
+ */
+export function subscribeToSession(
+  sessionId: string,
+  callbacks: Omit<StreamCallbacks, 'images'>
+): () => void {
+  const controller = new AbortController();
+
+  (async () => {
+    let doneFired = false;
+    const fireDone = () => {
+      if (doneFired) return;
+      doneFired = true;
+      callbacks.onDone?.();
+    };
+
+    try {
+      const res = await fetch(`${BASE}/sessions/${sessionId}/subscribe`, {
+        signal: controller.signal,
+      });
+
+      if (res.status === 204 || !res.ok) {
+        // Not streaming — fire done immediately
+        fireDone();
+        return;
+      }
+
+      const reader = res.body?.getReader();
+      if (!reader) {
+        fireDone();
+        return;
+      }
+
+      const decoder = new TextDecoder();
+      let buffer = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+
+        const parts = buffer.split('\n\n');
+        buffer = parts.pop() ?? '';
+
+        for (const part of parts) {
+          const line = part.trim();
+          if (!line.startsWith('data: ')) continue;
+          const json = line.slice(6);
+          try {
+            const event = JSON.parse(json);
+            switch (event.type) {
+              case 'init':
+                callbacks.onInit?.(event);
+                break;
+              case 'text':
+                callbacks.onText?.(event.text);
+                break;
+              case 'raw':
+                callbacks.onRaw?.(event.data);
+                break;
+              case 'result':
+                callbacks.onResult?.(event);
+                break;
+              case 'error':
+                callbacks.onError?.(event.error);
+                break;
+              case 'done':
+                fireDone();
+                break;
+            }
+          } catch {
+            // skip
+          }
+        }
+      }
+
+      fireDone();
+    } catch (err) {
+      if ((err as Error).name !== 'AbortError') {
+        callbacks.onError?.(err instanceof Error ? err.message : 'Unknown error');
+      }
+    }
+  })();
+
+  return () => controller.abort();
+}
+
 export async function cacheImage(
   data: string,
   mediaType: string,

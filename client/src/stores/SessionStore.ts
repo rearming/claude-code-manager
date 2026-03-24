@@ -1,11 +1,21 @@
 import { makeAutoObservable, runInAction } from 'mobx';
 import type { SessionSummary, SessionDetail, ForkResult, ImageAttachment } from '../types';
-import { fetchSessions, fetchSessionDetail, resumeSession, forkSessionAt, streamMessageToSession, streamNewSession } from '../api';
+import { fetchSessions, fetchSessionDetail, resumeSession, forkSessionAt, streamMessageToSession, streamNewSession, fetchSessionStatus, subscribeToSession } from '../api';
 
 const SETTINGS_KEY = 'ccm-settings';
 const SCROLL_POSITIONS_KEY = 'ccm-scroll-positions';
 const RAW_LINES_KEY = 'ccm-raw-lines';
 const TERMINAL_INPUT_KEY = 'ccm-terminal-input';
+const SELECTED_SESSION_KEY = 'ccm-selected-session';
+
+interface PanelLayout {
+  sidebarSize: number;    // percentage
+  chatSize: number;       // percentage
+  terminalSize: number;   // percentage
+  sidebarCollapsed: boolean;
+  chatCollapsed: boolean;
+  terminalCollapsed: boolean;
+}
 
 interface Settings {
   autoScrollOnNewMessages: boolean;
@@ -13,7 +23,17 @@ interface Settings {
   globalExpandTools: boolean;
   globalShowDiffs: boolean;
   showTerminal: boolean;
+  panelLayout: PanelLayout;
 }
+
+const defaultPanelLayout: PanelLayout = {
+  sidebarSize: 20,
+  chatSize: 50,
+  terminalSize: 30,
+  sidebarCollapsed: false,
+  chatCollapsed: false,
+  terminalCollapsed: false,
+};
 
 const defaultSettings: Settings = {
   autoScrollOnNewMessages: true,
@@ -21,6 +41,7 @@ const defaultSettings: Settings = {
   globalExpandTools: false,
   globalShowDiffs: false,
   showTerminal: false,
+  panelLayout: { ...defaultPanelLayout },
 };
 
 function loadSettings(): Settings {
@@ -63,7 +84,12 @@ export interface StreamingToolCall {
   name: string;
   input: Record<string, unknown>;
   status: 'running' | 'done';
+  _rawInput?: string;
 }
+
+export type StreamingBlock =
+  | { type: 'text'; text: string }
+  | { type: 'tool_use'; id?: string; name: string; input: Record<string, unknown>; status: 'running' | 'done'; _rawInput?: string };
 
 export class SessionStore {
   sessions: SessionSummary[] = [];
@@ -83,6 +109,7 @@ export class SessionStore {
   abortStream: (() => void) | null = null;
   rawLines: string[] = loadRawLines();
   streamingToolCalls: StreamingToolCall[] = [];
+  streamingBlocks: StreamingBlock[] = [];
   terminalInput: string = loadTerminalInput();
   lastRawEventTime: number = 0;
   settings: Settings = loadSettings();
@@ -106,6 +133,27 @@ export class SessionStore {
     this.persistSettings();
   }
 
+  get panelLayout(): PanelLayout {
+    return this.settings.panelLayout || { ...defaultPanelLayout };
+  }
+
+  setPanelLayout(sizes: Partial<PanelLayout>) {
+    this.settings.panelLayout = { ...this.settings.panelLayout, ...sizes };
+    this.persistSettings();
+  }
+
+  setSidebarCollapsed(collapsed: boolean) {
+    this.setPanelLayout({ sidebarCollapsed: collapsed });
+  }
+
+  setChatCollapsed(collapsed: boolean) {
+    this.setPanelLayout({ chatCollapsed: collapsed });
+  }
+
+  setTerminalCollapsed(collapsed: boolean) {
+    this.setPanelLayout({ terminalCollapsed: collapsed });
+  }
+
   appendRawLine(line: string) {
     this.rawLines.push(line);
     // Keep last 1000 lines
@@ -125,13 +173,22 @@ export class SessionStore {
   }
 
   private processStreamEvent(event: Record<string, unknown>) {
-    // content_block_start: primary source for tool call detection during streaming
+    // content_block_start: detect new text or tool_use blocks
     if (event.type === 'content_block_start') {
       const block = (event as { content_block?: { type: string; id?: string; name?: string }; index?: number }).content_block;
       if (block?.type === 'tool_use' && block.name) {
         const exists = block.id && this.streamingToolCalls.some(tc => tc.id === block.id);
         if (!exists) {
-          this.streamingToolCalls.push({
+          const toolCall: StreamingToolCall = {
+            id: block.id,
+            name: block.name,
+            input: {},
+            status: 'running',
+          };
+          this.streamingToolCalls.push(toolCall);
+          // Add to interleaved blocks
+          this.streamingBlocks.push({
+            type: 'tool_use',
             id: block.id,
             name: block.name,
             input: {},
@@ -139,42 +196,61 @@ export class SessionStore {
           });
         }
       }
-      // Track the current block index for matching deltas
       if (block?.type === 'text') {
         // A new text block starting means previous tool calls are done
         for (const tc of this.streamingToolCalls) {
           if (tc.status === 'running') tc.status = 'done';
         }
+        for (const b of this.streamingBlocks) {
+          if (b.type === 'tool_use' && b.status === 'running') b.status = 'done';
+        }
+        // Add a new text block for interleaving
+        this.streamingBlocks.push({ type: 'text', text: '' });
       }
     }
 
-    // content_block_delta: accumulate tool input JSON as it streams in
+    // content_block_delta: accumulate text or tool input
     if (event.type === 'content_block_delta') {
-      const delta = (event as { delta?: { type?: string; partial_json?: string } }).delta;
+      const delta = (event as { delta?: { type?: string; partial_json?: string; text?: string } }).delta;
+
+      // Text delta → append to latest text block
+      if (delta?.type === 'text_delta' && delta.text) {
+        const lastText = [...this.streamingBlocks].reverse().find(b => b.type === 'text');
+        if (lastText && lastText.type === 'text') {
+          lastText.text += delta.text;
+        } else {
+          // No text block yet (e.g. missed content_block_start) — create one
+          this.streamingBlocks.push({ type: 'text', text: delta.text });
+        }
+      }
+
+      // Tool input delta → accumulate partial JSON
       if (delta?.type === 'input_json_delta' && delta.partial_json) {
-        // Find the last running tool call and append to its raw input
         const lastRunning = [...this.streamingToolCalls].reverse().find(tc => tc.status === 'running');
         if (lastRunning) {
-          // Accumulate partial JSON; parse when complete
-          const raw = ((lastRunning as any)._rawInput || '') + delta.partial_json;
-          (lastRunning as any)._rawInput = raw;
+          const raw = (lastRunning._rawInput || '') + delta.partial_json;
+          lastRunning._rawInput = raw;
           try {
             lastRunning.input = JSON.parse(raw);
           } catch {
             // Incomplete JSON, wait for more deltas
           }
         }
+        // Also update in streamingBlocks
+        const lastToolBlock = [...this.streamingBlocks].reverse().find(b => b.type === 'tool_use' && b.status === 'running');
+        if (lastToolBlock && lastToolBlock.type === 'tool_use') {
+          const raw = (lastToolBlock._rawInput || '') + delta.partial_json;
+          lastToolBlock._rawInput = raw;
+          try {
+            lastToolBlock.input = JSON.parse(raw);
+          } catch {
+            // Incomplete JSON
+          }
+        }
       }
     }
 
-    // content_block_stop: mark tool calls when their block ends
-    if (event.type === 'content_block_stop') {
-      // The stopped block's tool call input is now complete
-      // (input was accumulated via content_block_delta)
-    }
-
     // assistant event: fallback for when assistant events arrive on stdout
-    // (may not happen in stream-json mode, but handle for robustness)
     if (event.type === 'assistant') {
       const msg = event.message as { content?: Array<{ type: string; id?: string; name?: string; input?: Record<string, unknown>; text?: string }> } | undefined;
       if (msg?.content && Array.isArray(msg.content)) {
@@ -182,7 +258,6 @@ export class SessionStore {
           if (block.type === 'tool_use' && block.name) {
             const existing = block.id ? this.streamingToolCalls.find(tc => tc.id === block.id) : undefined;
             if (existing) {
-              // Update input from the complete assistant event
               if (block.input && Object.keys(block.input).length > 0) {
                 existing.input = block.input;
               }
@@ -193,6 +268,17 @@ export class SessionStore {
                 input: block.input || {},
                 status: 'running',
               });
+              // Also add to blocks if not already there
+              const existsInBlocks = block.id && this.streamingBlocks.some(b => b.type === 'tool_use' && b.id === block.id);
+              if (!existsInBlocks) {
+                this.streamingBlocks.push({
+                  type: 'tool_use',
+                  id: block.id,
+                  name: block.name,
+                  input: block.input || {},
+                  status: 'running',
+                });
+              }
             }
           }
         }
@@ -203,6 +289,9 @@ export class SessionStore {
     if (event.type === 'result') {
       for (const tc of this.streamingToolCalls) {
         if (tc.status === 'running') tc.status = 'done';
+      }
+      for (const b of this.streamingBlocks) {
+        if (b.type === 'tool_use' && b.status === 'running') b.status = 'done';
       }
     }
   }
@@ -341,6 +430,13 @@ export class SessionStore {
       runInAction(() => {
         this.sessions = sessions;
         this.loading = false;
+        // Restore previously selected session
+        if (!this.selectedSessionId && !this.sending) {
+          const saved = sessionStorage.getItem(SELECTED_SESSION_KEY);
+          if (saved && sessions.some(s => s.sessionId === saved)) {
+            this.selectSession(saved);
+          }
+        }
       });
     } catch (e) {
       runInAction(() => {
@@ -352,16 +448,22 @@ export class SessionStore {
 
   async selectSession(sessionId: string) {
     this.selectedSessionId = sessionId;
+    this.persistSelectedSession();
     this.selectedDetail = null;
     this.detailLoading = true;
     this.resumeCommand = null;
     this.streamingText = '';
+    this.streamingBlocks = [];
     try {
       const detail = await fetchSessionDetail(sessionId);
       runInAction(() => {
         this.selectedDetail = detail;
         this.detailLoading = false;
       });
+      // Check if this session is actively streaming and reconnect
+      if (!this.sending) {
+        this.tryReconnectToStream(sessionId);
+      }
     } catch (e) {
       runInAction(() => {
         this.error = e instanceof Error ? e.message : 'Unknown error';
@@ -381,12 +483,14 @@ export class SessionStore {
       runInAction(() => {
         this.selectedDetail = detail;
         this.streamingText = '';
+        this.streamingBlocks = [];
         this.detailLoading = false;
       });
     } catch (e) {
       runInAction(() => {
         this.error = e instanceof Error ? e.message : 'Unknown error';
         this.streamingText = '';
+        this.streamingBlocks = [];
         this.detailLoading = false;
       });
     }
@@ -452,6 +556,7 @@ export class SessionStore {
 
     this.clearRawLines();
     this.streamingToolCalls = [];
+    this.streamingBlocks = [];
     const abort = streamNewSession(message, projectPath, this.settings.dangerouslySkipPermissions, {
       images: images,
       onInit: (data) => {
@@ -512,6 +617,7 @@ export class SessionStore {
     this.error = null;
     this.clearRawLines();
     this.streamingToolCalls = [];
+    this.streamingBlocks = [];
 
     const abort = streamMessageToSession(sessionId, message, this.settings.dangerouslySkipPermissions, {
       images: images,
@@ -564,6 +670,66 @@ export class SessionStore {
       this.sending = false;
       this.streamingText = '';
       this.streamingToolCalls = [];
+      this.streamingBlocks = [];
+    }
+  }
+
+  /**
+   * Check if a session is actively streaming on the server and reconnect if so.
+   * Called after page reload when restoring a selected session.
+   */
+  async tryReconnectToStream(sessionId: string) {
+    try {
+      const status = await fetchSessionStatus(sessionId);
+      if (!status.streaming) return;
+
+      runInAction(() => {
+        this.sending = true;
+        this.streamingText = '';
+        this.streamingToolCalls = [];
+        this.streamingBlocks = [];
+        this.clearRawLines();
+      });
+
+      const abort = subscribeToSession(sessionId, {
+        onText: (text) => {
+          runInAction(() => {
+            this.streamingText += text;
+          });
+        },
+        onRaw: (data) => {
+          runInAction(() => {
+            this.appendRawLine(data);
+          });
+        },
+        onResult: (data) => {
+          runInAction(() => {
+            if (data.result) {
+              this.streamingText = data.result;
+            }
+          });
+        },
+        onError: (error) => {
+          runInAction(() => {
+            this.error = error;
+            this.sending = false;
+          });
+        },
+        onDone: () => {
+          runInAction(() => {
+            this.sending = false;
+            this.abortStream = null;
+            this.scrollToBottomOnLoad = true;
+            this.reloadSession(sessionId);
+          });
+        },
+      });
+
+      runInAction(() => {
+        this.abortStream = abort;
+      });
+    } catch {
+      // Status check failed — not critical, just skip reconnect
     }
   }
 
@@ -574,9 +740,18 @@ export class SessionStore {
   clearSelection() {
     this.cancelSend();
     this.selectedSessionId = null;
+    this.persistSelectedSession();
     this.selectedDetail = null;
     this.resumeCommand = null;
     this.forkResult = null;
+  }
+
+  private persistSelectedSession() {
+    if (this.selectedSessionId) {
+      sessionStorage.setItem(SELECTED_SESSION_KEY, this.selectedSessionId);
+    } else {
+      sessionStorage.removeItem(SELECTED_SESSION_KEY);
+    }
   }
 }
 
