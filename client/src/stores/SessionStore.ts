@@ -24,6 +24,7 @@ interface Settings {
   globalShowDiffs: boolean;
   showTerminal: boolean;
   panelLayout: PanelLayout;
+  projectFilter: string;
 }
 
 const defaultPanelLayout: PanelLayout = {
@@ -42,6 +43,7 @@ const defaultSettings: Settings = {
   globalShowDiffs: false,
   showTerminal: false,
   panelLayout: { ...defaultPanelLayout },
+  projectFilter: '',
 };
 
 function loadSettings(): Settings {
@@ -96,7 +98,7 @@ export class SessionStore {
   selectedDetail: SessionDetail | null = null;
   selectedSessionId: string | null = null;
   searchQuery = '';
-  projectFilter = '';
+  projectFilter = loadSettings().projectFilter || '';
   sortBy: 'date' | 'messages' | 'project' = 'date';
   loading = false;
   detailLoading = false;
@@ -416,6 +418,8 @@ export class SessionStore {
 
   setProjectFilter(project: string) {
     this.projectFilter = project;
+    this.settings.projectFilter = project;
+    this.persistSettings();
   }
 
   setSortBy(sort: 'date' | 'messages' | 'project') {
