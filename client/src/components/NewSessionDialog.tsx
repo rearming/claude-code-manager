@@ -3,6 +3,13 @@ import { observer } from 'mobx-react-lite';
 import { X, FolderOpen } from 'lucide-react';
 import { Button } from '@/components/shadcn/ui/button';
 import { Input } from '@/components/shadcn/ui/input';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/shadcn/ui/select';
 import type { SessionStore } from '../stores/SessionStore';
 import { browseDirectory, type BrowseResult } from '../api';
 
@@ -91,16 +98,20 @@ export const NewSessionDialog = observer(({ store }: Props) => {
         <div className="space-y-2">
           <label className="text-xs text-zinc-500 uppercase tracking-wide">project directory</label>
           {projectPaths.length > 0 && (
-            <select
-              className="w-full h-8 bg-black/50 border border-input text-sm text-zinc-300 px-2 rounded-none focus:outline-none focus:ring-1 focus:ring-ring"
-              value={projectPath}
-              onChange={(e) => setProjectPath(e.target.value)}
+            <Select
+              value={projectPath || '__none__'}
+              onValueChange={(val) => setProjectPath(val === '__none__' ? '' : val)}
             >
-              <option value="">select a project...</option>
-              {projectPaths.map((p) => (
-                <option key={p} value={p}>{p}</option>
-              ))}
-            </select>
+              <SelectTrigger className="w-full h-8 bg-black/50 text-sm text-zinc-300">
+                <SelectValue placeholder="select a project..." />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="__none__">select a project...</SelectItem>
+                {projectPaths.map((p) => (
+                  <SelectItem key={p} value={p}>{p}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           )}
           <div className="flex gap-2">
             <Input

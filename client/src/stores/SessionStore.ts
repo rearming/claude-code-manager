@@ -37,6 +37,13 @@ function loadScrollPositions(): Record<string, { position: number; messageCount:
   }
 }
 
+export interface StreamingToolCall {
+  id?: string;
+  name: string;
+  input: Record<string, unknown>;
+  status: 'running' | 'done';
+}
+
 export class SessionStore {
   sessions: SessionSummary[] = [];
   selectedDetail: SessionDetail | null = null;
@@ -55,6 +62,8 @@ export class SessionStore {
   abortStream: (() => void) | null = null;
   showTerminal = false;
   rawLines: string[] = [];
+  streamingToolCalls: StreamingToolCall[] = [];
+  lastRawEventTime: number = 0;
   settings: Settings = loadSettings();
   scrollPositions: Record<string, { position: number; messageCount: number } | number> = loadScrollPositions();
   showSettings = false;
@@ -76,6 +85,58 @@ export class SessionStore {
     // Keep last 1000 lines
     if (this.rawLines.length > 1000) {
       this.rawLines = this.rawLines.slice(-800);
+    }
+    this.lastRawEventTime = Date.now();
+
+    // Parse raw events to extract tool call info for live streaming display
+    try {
+      const event = JSON.parse(line);
+      this.processStreamEvent(event);
+    } catch {
+      // Not JSON (e.g. stderr lines) — skip
+    }
+  }
+
+  private processStreamEvent(event: Record<string, unknown>) {
+    // assistant event: contains complete message with text + tool_use blocks
+    if (event.type === 'assistant') {
+      const msg = event.message as { content?: Array<{ type: string; id?: string; name?: string; input?: Record<string, unknown>; text?: string }> } | undefined;
+      if (msg?.content && Array.isArray(msg.content)) {
+        // Mark all currently-running tool calls as done (new assistant turn means previous tools finished)
+        for (const tc of this.streamingToolCalls) {
+          if (tc.status === 'running') tc.status = 'done';
+        }
+        // Extract new tool_use blocks
+        for (const block of msg.content) {
+          if (block.type === 'tool_use' && block.name) {
+            const exists = block.id && this.streamingToolCalls.some(tc => tc.id === block.id);
+            if (!exists) {
+              this.streamingToolCalls.push({
+                id: block.id,
+                name: block.name,
+                input: block.input || {},
+                status: 'running',
+              });
+            }
+          }
+        }
+      }
+    }
+
+    // content_block_start: early notification of a tool_use block starting
+    if (event.type === 'content_block_start') {
+      const block = (event as { content_block?: { type: string; id?: string; name?: string } }).content_block;
+      if (block?.type === 'tool_use' && block.name) {
+        const exists = block.id && this.streamingToolCalls.some(tc => tc.id === block.id);
+        if (!exists) {
+          this.streamingToolCalls.push({
+            id: block.id,
+            name: block.name,
+            input: {},
+            status: 'running',
+          });
+        }
+      }
     }
   }
 
@@ -301,6 +362,7 @@ export class SessionStore {
     this.selectedDetail = null;
 
     this.rawLines = [];
+    this.streamingToolCalls = [];
     const abort = streamNewSession(message, projectPath, this.settings.dangerouslySkipPermissions, {
       images: images,
       onInit: (data) => {
@@ -360,6 +422,7 @@ export class SessionStore {
     this.pendingImages = images || null;
     this.error = null;
     this.rawLines = [];
+    this.streamingToolCalls = [];
 
     const abort = streamMessageToSession(sessionId, message, this.settings.dangerouslySkipPermissions, {
       images: images,
@@ -411,6 +474,7 @@ export class SessionStore {
       this.abortStream = null;
       this.sending = false;
       this.streamingText = '';
+      this.streamingToolCalls = [];
     }
   }
 

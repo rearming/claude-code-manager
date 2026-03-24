@@ -15,7 +15,7 @@ import { VisuallyHidden } from '@radix-ui/react-visually-hidden';
 import AnnotationCanvas from './AnnotationCanvas';
 import type { DrawCommand } from './AnnotationCanvas';
 import { cacheImage, saveAnnotatedImage } from '../api';
-import type { SessionStore } from '../stores/SessionStore';
+import type { SessionStore, StreamingToolCall } from '../stores/SessionStore';
 import type { ConversationMessage, ToolCallSummary, ImageAttachment } from '../types';
 
 interface Props {
@@ -29,6 +29,7 @@ export const SessionDetail = observer(({ store }: Props) => {
   const { summary, messages } = detail;
   const containerRef = useRef<HTMLDivElement>(null);
   const [showScrollButton, setShowScrollButton] = useState(false);
+  const isStale = useStaleStreamDetector(store);
 
   const isNearBottom = useCallback(() => {
     const el = containerRef.current;
@@ -77,7 +78,7 @@ export const SessionDetail = observer(({ store }: Props) => {
     if (el && isNearBottom()) {
       el.scrollTop = el.scrollHeight;
     }
-  }, [store.streamingText, store.sending, store.settings.autoScrollOnNewMessages, isNearBottom]);
+  }, [store.streamingText, store.streamingToolCalls.length, store.sending, store.settings.autoScrollOnNewMessages, isNearBottom]);
 
   useEffect(() => {
     if (store.pendingUserMessage && store.settings.autoScrollOnNewMessages) {
@@ -216,13 +217,32 @@ export const SessionDetail = observer(({ store }: Props) => {
             </div>
           )}
 
-          {store.sending && !store.streamingText && (
+          {store.sending && store.streamingToolCalls.length > 0 && (
+            <StreamingToolCallsView toolCalls={store.streamingToolCalls} />
+          )}
+
+          {store.sending && !store.streamingText && store.streamingToolCalls.length === 0 && (
             <div className="p-4 border border-border bg-assistant-bg mr-6">
               <div className="flex items-center gap-2 mb-2">
                 <span className="text-xs font-bold text-zinc-300 uppercase tracking-wide">claude</span>
                 <span className="text-xs text-zinc-500 animate-pulse">thinking...</span>
               </div>
               <div className="text-sm text-zinc-500">waiting for response...</div>
+            </div>
+          )}
+
+          {isStale && (
+            <div className="p-3 border border-yellow-800 bg-yellow-900/20 mx-6 mt-2">
+              <div className="text-xs text-yellow-400">
+                no events received for 30s — the session may be waiting for permission approval or is stalled.
+              </div>
+              <div className="flex gap-2 mt-2">
+                <Button size="sm" variant="outline" className="text-xs" onClick={() => store.cancelSend()}>cancel</Button>
+                <Button size="sm" variant="outline" className="text-xs" onClick={() => {
+                  store.cancelSend();
+                  store.reloadSession(summary.sessionId);
+                }}>cancel &amp; reload</Button>
+              </div>
             </div>
           )}
         </div>
@@ -246,6 +266,65 @@ export const SessionDetail = observer(({ store }: Props) => {
     </div>
   );
 });
+
+function useStaleStreamDetector(store: SessionStore): boolean {
+  const [isStale, setIsStale] = useState(false);
+  useEffect(() => {
+    if (!store.sending) {
+      setIsStale(false);
+      return;
+    }
+    const interval = setInterval(() => {
+      if (store.sending && store.lastRawEventTime > 0) {
+        setIsStale(Date.now() - store.lastRawEventTime > 30_000);
+      }
+    }, 5_000);
+    return () => clearInterval(interval);
+  }, [store, store.sending]);
+  return isStale;
+}
+
+function getStreamingToolSummary(tc: StreamingToolCall): string {
+  const input = tc.input;
+  const filePath = input.file_path as string | undefined;
+  if ((tc.name === 'Edit' || tc.name === 'MultiEdit' || tc.name === 'Write' || tc.name === 'Read') && filePath) return filePath;
+  if (tc.name === 'Bash' || tc.name === 'Bash Tool') return (input.description || input.command || '') as string;
+  if (tc.name === 'Grep') return `/${input.pattern || ''}/ ${input.path || ''}`;
+  if (tc.name === 'Glob') return (input.pattern || '') as string;
+  if (tc.name === 'Agent') return (input.description || '') as string;
+  const vals = Object.values(input);
+  const firstStr = vals.find(v => typeof v === 'string');
+  return typeof firstStr === 'string' ? firstStr.slice(0, 80) : '';
+}
+
+function StreamingToolCallsView({ toolCalls }: { toolCalls: StreamingToolCall[] }) {
+  return (
+    <div className="p-4 border border-border bg-assistant-bg mx-6">
+      <div className="flex items-center gap-2 mb-2">
+        <span className="text-xs font-bold text-zinc-300 uppercase tracking-wide">tool calls</span>
+        <span className="text-xs text-zinc-500">{toolCalls.filter(tc => tc.status === 'running').length} running</span>
+      </div>
+      <div className="flex flex-wrap gap-1.5">
+        {toolCalls.map((tc, i) => (
+          <span
+            key={tc.id || i}
+            className={`inline-flex items-center gap-1.5 text-xs border px-2 py-1 ${
+              tc.status === 'running'
+                ? 'border-green-800 bg-green-900/20 text-green-400'
+                : 'border-zinc-700 bg-black/30 text-zinc-500'
+            }`}
+          >
+            {tc.status === 'running' && (
+              <span className="h-1.5 w-1.5 rounded-full bg-green-500 animate-pulse" />
+            )}
+            <span className="font-medium">{tc.name}</span>
+            <span className="truncate max-w-[250px] opacity-75">{getStreamingToolSummary(tc)}</span>
+          </span>
+        ))}
+      </div>
+    </div>
+  );
+}
 
 interface MessageBubbleProps {
   message: ConversationMessage;

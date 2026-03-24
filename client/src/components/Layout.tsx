@@ -95,13 +95,38 @@ export const Layout = observer(({ store }: Props) => {
                         </Markdown>
                       </div>
                     </div>
-                  ) : (
+                  ) : store.streamingToolCalls.length === 0 ? (
                     <div className="p-4 border border-border bg-assistant-bg">
                       <div className="flex items-center gap-2 mb-2">
                         <span className="text-xs font-bold text-zinc-300 uppercase tracking-wide">claude</span>
                         <span className="text-xs text-zinc-500 animate-pulse">thinking...</span>
                       </div>
                       <div className="text-sm text-zinc-500">waiting for response...</div>
+                    </div>
+                  ) : null}
+                  {store.sending && store.streamingToolCalls.length > 0 && (
+                    <div className="p-4 border border-border bg-assistant-bg mt-3">
+                      <div className="flex items-center gap-2 mb-2">
+                        <span className="text-xs font-bold text-zinc-300 uppercase tracking-wide">tool calls</span>
+                        <span className="text-xs text-zinc-500">{store.streamingToolCalls.filter(tc => tc.status === 'running').length} running</span>
+                      </div>
+                      <div className="flex flex-wrap gap-1.5">
+                        {store.streamingToolCalls.map((tc, i) => (
+                          <span
+                            key={tc.id || i}
+                            className={`inline-flex items-center gap-1.5 text-xs border px-2 py-1 ${
+                              tc.status === 'running'
+                                ? 'border-green-800 bg-green-900/20 text-green-400'
+                                : 'border-zinc-700 bg-black/30 text-zinc-500'
+                            }`}
+                          >
+                            {tc.status === 'running' && (
+                              <span className="h-1.5 w-1.5 rounded-full bg-green-500 animate-pulse" />
+                            )}
+                            <span className="font-medium">{tc.name}</span>
+                          </span>
+                        ))}
+                      </div>
                     </div>
                   )}
                 </div>

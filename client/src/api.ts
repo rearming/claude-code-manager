@@ -137,6 +137,13 @@ function streamSSE(
   const controller = new AbortController();
 
   (async () => {
+    let doneFired = false;
+    const fireDone = () => {
+      if (doneFired) return;
+      doneFired = true;
+      callbacks.onDone?.();
+    };
+
     try {
       const res = await fetch(url, {
         method: 'POST',
@@ -193,7 +200,7 @@ function streamSSE(
                 callbacks.onError?.(event.error);
                 break;
               case 'done':
-                callbacks.onDone?.();
+                fireDone();
                 break;
             }
           } catch {
@@ -202,7 +209,8 @@ function streamSSE(
         }
       }
 
-      callbacks.onDone?.();
+      // Fallback: if stream ended without a 'done' event
+      fireDone();
     } catch (err) {
       if ((err as Error).name !== 'AbortError') {
         callbacks.onError?.(err instanceof Error ? err.message : 'Unknown error');
