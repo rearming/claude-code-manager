@@ -5,7 +5,7 @@ import remarkGfm from 'remark-gfm';
 import rehypeHighlight from 'rehype-highlight';
 import 'highlight.js/styles/github-dark.min.css';
 import type { SessionStore } from '../stores/SessionStore';
-import type { ConversationMessage } from '../types';
+import type { ConversationMessage, ToolCallSummary } from '../types';
 
 interface Props {
   store: SessionStore;
@@ -176,6 +176,8 @@ export const SessionDetail = observer(({ store }: Props) => {
               totalMessages={messages.length}
               onFork={handleFork}
               forking={store.forking}
+              globalExpand={store.settings.globalExpandTools}
+              globalDiffs={store.settings.globalShowDiffs}
             />
           ))}
 
@@ -240,12 +242,19 @@ interface MessageBubbleProps {
   totalMessages: number;
   onFork: (uuid: string) => void;
   forking: boolean;
+  globalExpand: boolean;
+  globalDiffs: boolean;
 }
 
-function MessageBubble({ message, messageIndex, totalMessages, onFork, forking }: MessageBubbleProps) {
-  const [showTools, setShowTools] = useState(false);
+function MessageBubble({ message, messageIndex, totalMessages, onFork, forking, globalExpand, globalDiffs }: MessageBubbleProps) {
+  const [localExpand, setLocalExpand] = useState<boolean | null>(null);
+  const [localDiffs, setLocalDiffs] = useState<boolean | null>(null);
   const [confirmFork, setConfirmFork] = useState(false);
   const isUser = message.type === 'user';
+
+  // Local override takes precedence over global
+  const showTools = localExpand !== null ? localExpand : globalExpand;
+  const showDiffs = localDiffs !== null ? localDiffs : globalDiffs;
 
   const handleForkClick = () => {
     if (confirmFork) {
@@ -255,6 +264,28 @@ function MessageBubble({ message, messageIndex, totalMessages, onFork, forking }
       setConfirmFork(true);
     }
   };
+
+  const toggleTools = () => {
+    if (localExpand === null) {
+      // First click: override global to the opposite
+      setLocalExpand(!globalExpand);
+    } else {
+      setLocalExpand(!localExpand);
+    }
+  };
+
+  const toggleDiffs = () => {
+    if (localDiffs === null) {
+      setLocalDiffs(!globalDiffs);
+    } else {
+      setLocalDiffs(!localDiffs);
+    }
+  };
+
+  const hasFileTools = message.toolCalls?.some(tc =>
+    ['Edit', 'Write', 'MultiEdit'].includes(tc.name) &&
+    (tc.input.old_string !== undefined || tc.input.new_string !== undefined || tc.input.content !== undefined)
+  );
 
   return (
     <div className={`message ${isUser ? 'message-user' : 'message-assistant'}`}>
@@ -280,8 +311,17 @@ function MessageBubble({ message, messageIndex, totalMessages, onFork, forking }
         </button>
       </div>
       <div className={`message-content ${isUser ? '' : 'markdown-body'}`}>
-        {!message.content ? (
-          <span className="text-muted">(tool calls only)</span>
+        {!message.content && message.toolCalls && message.toolCalls.length > 0 ? (
+          <div className="tool-calls-inline-summary" onClick={toggleTools}>
+            {message.toolCalls.map((tc, i) => (
+              <span key={i} className="tool-inline-chip">
+                <span className="tool-name">{tc.name}</span>
+                <span className="tool-summary">{getToolSummary(tc)}</span>
+              </span>
+            ))}
+          </div>
+        ) : !message.content ? (
+          <span className="text-muted">(empty)</span>
         ) : isUser ? (
           message.content
         ) : (
@@ -292,25 +332,152 @@ function MessageBubble({ message, messageIndex, totalMessages, onFork, forking }
       </div>
       {message.toolCalls && message.toolCalls.length > 0 && (
         <div className="tool-calls">
-          <button
-            className="tool-toggle"
-            onClick={() => setShowTools(!showTools)}
-          >
-            {showTools ? 'Hide' : 'Show'} {message.toolCalls.length} tool call
-            {message.toolCalls.length > 1 ? 's' : ''}
-          </button>
+          <div className="tool-calls-actions">
+            <button
+              className={`tool-toggle ${showTools ? 'tool-toggle-active' : ''}`}
+              onClick={toggleTools}
+            >
+              {showTools ? 'Hide' : 'Show'} {message.toolCalls.length} tool call
+              {message.toolCalls.length > 1 ? 's' : ''}
+            </button>
+            {hasFileTools && showTools && (
+              <button
+                className={`tool-toggle tool-toggle-diff ${showDiffs ? 'tool-toggle-active' : ''}`}
+                onClick={toggleDiffs}
+              >
+                {showDiffs ? 'Hide' : 'Show'} Diffs
+              </button>
+            )}
+          </div>
           {showTools && (
             <div className="tool-calls-list">
               {message.toolCalls.map((tc, i) => (
-                <div key={i} className="tool-call">
-                  <span className="tool-name">{tc.name}</span>
-                  <span className="tool-input">{tc.input}</span>
-                </div>
+                <ToolCallView key={i} tool={tc} showDiff={showDiffs} />
               ))}
             </div>
           )}
         </div>
       )}
+    </div>
+  );
+}
+
+function getFileExtension(filePath: string): string {
+  const parts = filePath.split('.');
+  return parts.length > 1 ? parts[parts.length - 1] : '';
+}
+
+function getToolSummary(tool: ToolCallSummary): string {
+  const filePath = tool.input.file_path as string | undefined;
+  const isEditTool = tool.name === 'Edit' || tool.name === 'MultiEdit';
+  const isWriteTool = tool.name === 'Write';
+
+  if (isEditTool && filePath) {
+    const replaceAll = tool.input.replace_all ? ' (all)' : '';
+    return filePath + replaceAll;
+  }
+  if (isWriteTool && filePath) {
+    return filePath;
+  }
+  if (tool.name === 'Read' && filePath) {
+    const range = tool.input.offset ? ` :${tool.input.offset}` : '';
+    return filePath + range;
+  }
+  if (tool.name === 'Bash' || tool.name === 'Bash Tool') {
+    return tool.input.description || tool.input.command || '';
+  }
+  if (tool.name === 'Grep') {
+    return `/${tool.input.pattern || ''}/ ${tool.input.path || ''}`;
+  }
+  if (tool.name === 'Glob') {
+    return tool.input.pattern || '';
+  }
+  if (tool.name === 'Agent') {
+    return tool.input.description || tool.input.prompt?.slice(0, 80) || '';
+  }
+  // Generic: show first string value
+  const vals = Object.values(tool.input);
+  const firstStr = vals.find(v => typeof v === 'string');
+  return typeof firstStr === 'string' ? firstStr.slice(0, 120) : '';
+}
+
+function ToolCallView({ tool, showDiff }: { tool: ToolCallSummary; showDiff: boolean }) {
+  const isEditTool = tool.name === 'Edit' || tool.name === 'MultiEdit';
+  const isWriteTool = tool.name === 'Write';
+  const filePath = tool.input.file_path as string | undefined;
+
+  const [expanded, setExpanded] = useState(false);
+
+  return (
+    <div className="tool-call">
+      <div className="tool-call-header" onClick={() => setExpanded(!expanded)}>
+        <span className="tool-call-chevron">{expanded ? '\u25BC' : '\u25B6'}</span>
+        <span className="tool-name">{tool.name}</span>
+        <span className="tool-summary">{getToolSummary(tool)}</span>
+      </div>
+      {expanded && (
+        <div className="tool-call-body">
+          <ToolCallFormatted input={tool.input} toolName={tool.name} />
+        </div>
+      )}
+      {showDiff && isEditTool && tool.input.old_string !== undefined && (
+        <div className="tool-diff">
+          <div className="tool-diff-header">
+            {filePath && <span className="tool-diff-file">{filePath}</span>}
+          </div>
+          <div className="diff-container">
+            <div className="diff-side diff-old">
+              <div className="diff-label">old</div>
+              <pre><code>{tool.input.old_string}</code></pre>
+            </div>
+            <div className="diff-arrow">&rarr;</div>
+            <div className="diff-side diff-new">
+              <div className="diff-label">new</div>
+              <pre><code>{tool.input.new_string}</code></pre>
+            </div>
+          </div>
+        </div>
+      )}
+      {showDiff && isWriteTool && tool.input.content !== undefined && (
+        <div className="tool-diff">
+          <div className="tool-diff-header">
+            {filePath && <span className="tool-diff-file">{filePath} (write)</span>}
+          </div>
+          <div className="diff-container diff-write">
+            <pre><code>{tool.input.content}</code></pre>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ToolCallFormatted({ input, toolName }: { input: Record<string, any>; toolName: string }) {
+  // For tools with long string fields, show them nicely
+  const entries = Object.entries(input);
+
+  return (
+    <div className="tool-call-params">
+      {entries.map(([key, value]) => {
+        const isLongString = typeof value === 'string' && value.length > 60;
+        const isCode = typeof value === 'string' && (
+          key === 'command' || key === 'content' || key === 'old_string' ||
+          key === 'new_string' || key === 'prompt' || key === 'pattern'
+        );
+
+        return (
+          <div key={key} className="tool-param">
+            <span className="tool-param-key">{key}:</span>
+            {isCode || isLongString ? (
+              <pre className="tool-param-value-code"><code>{typeof value === 'string' ? value : JSON.stringify(value, null, 2)}</code></pre>
+            ) : (
+              <span className="tool-param-value">
+                {typeof value === 'string' ? value : JSON.stringify(value)}
+              </span>
+            )}
+          </div>
+        );
+      })}
     </div>
   );
 }

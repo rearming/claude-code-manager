@@ -249,6 +249,14 @@ body {
   font-weight: 500;
 }
 
+/* Main with toolbar wrapper */
+.main-with-toolbar {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
 /* Main Content */
 .main-content {
   flex: 1;
@@ -550,9 +558,46 @@ body {
   font-style: italic;
 }
 
+/* Tool calls inline summary (replaces "tool calls only") */
+.tool-calls-inline-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  cursor: pointer;
+}
+
+.tool-calls-inline-summary:hover .tool-inline-chip {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.tool-inline-chip {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 3px 8px;
+  border-radius: 4px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  transition: background 0.1s;
+}
+
+.tool-inline-chip .tool-name {
+  font-size: 12px;
+}
+
+.tool-inline-chip .tool-summary {
+  font-size: 11px;
+}
+
 /* Tool Calls */
 .tool-calls {
   margin-top: 8px;
+}
+
+.tool-calls-actions {
+  display: flex;
+  gap: 6px;
+  align-items: center;
 }
 
 .tool-toggle {
@@ -571,6 +616,15 @@ body {
   color: var(--text-secondary);
 }
 
+.tool-toggle-active {
+  border-color: var(--accent);
+  color: var(--text-secondary);
+}
+
+.tool-toggle-diff {
+  font-size: 10px;
+}
+
 .tool-calls-list {
   margin-top: 6px;
   display: flex;
@@ -579,26 +633,203 @@ body {
 }
 
 .tool-call {
-  display: flex;
-  gap: 8px;
-  padding: 4px 8px;
   background: rgba(0, 0, 0, 0.2);
-  border-radius: 4px;
+  border-radius: 6px;
   font-size: 12px;
   font-family: var(--font-mono);
+  overflow: hidden;
+}
+
+.tool-call-header {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 6px 10px;
+  cursor: pointer;
+  transition: background 0.1s;
+}
+
+.tool-call-header:hover {
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.tool-call-chevron {
+  font-size: 9px;
+  color: var(--text-muted);
+  width: 10px;
+  flex-shrink: 0;
 }
 
 .tool-name {
   color: var(--accent);
   font-weight: 500;
   white-space: nowrap;
+  flex-shrink: 0;
 }
 
-.tool-input {
+.tool-summary {
   color: var(--text-muted);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  flex: 1;
+  min-width: 0;
+}
+
+.tool-call-body {
+  padding: 0 10px 8px;
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.tool-call-params {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding-top: 6px;
+}
+
+.tool-param {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.tool-param-key {
+  color: #8be9fd;
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.tool-param-value {
+  color: var(--text-secondary);
+  font-size: 12px;
+  word-break: break-word;
+}
+
+.tool-param-value-code {
+  background: rgba(0, 0, 0, 0.25);
+  border-radius: 4px;
+  padding: 6px 8px;
+  margin: 2px 0;
+  overflow-x: auto;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-primary);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.tool-param-value-code code {
+  font-family: var(--font-mono);
+  font-size: inherit;
+}
+
+/* Code Diffs */
+.tool-diff {
+  margin: 4px 0;
+  border-radius: 6px;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.tool-diff-header {
+  padding: 4px 10px;
+  background: rgba(0, 0, 0, 0.3);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.tool-diff-file {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+
+.diff-container {
+  display: flex;
+  gap: 0;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.5;
+  overflow-x: auto;
+}
+
+.diff-side {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.diff-side pre {
+  margin: 0;
+  padding: 8px 10px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.diff-side code {
+  font-family: inherit;
+  font-size: inherit;
+}
+
+.diff-old {
+  background: rgba(233, 69, 96, 0.08);
+  border-right: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.diff-old pre {
+  color: #f8a4b8;
+}
+
+.diff-new {
+  background: rgba(74, 222, 128, 0.08);
+}
+
+.diff-new pre {
+  color: #a3e8b8;
+}
+
+.diff-label {
+  padding: 2px 10px;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-muted);
+  background: rgba(0, 0, 0, 0.15);
+}
+
+.diff-arrow {
+  display: flex;
+  align-items: center;
+  padding: 0 6px;
+  color: var(--text-muted);
+  font-size: 14px;
+  flex-shrink: 0;
+  background: rgba(0, 0, 0, 0.15);
+}
+
+.diff-write {
+  display: block;
+}
+
+.diff-write pre {
+  margin: 0;
+  padding: 8px 10px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--text-primary);
+  background: rgba(74, 222, 128, 0.05);
+  max-height: 400px;
+  overflow-y: auto;
+}
+
+.diff-write pre::-webkit-scrollbar {
+  width: 6px;
+}
+
+.diff-write pre::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 3px;
 }
 
 .clickable {
@@ -1361,4 +1592,66 @@ body {
   background: var(--bg-tertiary);
   color: var(--success);
   border-color: var(--success);
+}
+
+/* Bottom Toolbar */
+.bottom-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 16px;
+  background: var(--bg-secondary);
+  border-top: 1px solid var(--border);
+  flex-shrink: 0;
+  gap: 12px;
+}
+
+.toolbar-section {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.toolbar-button {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 10px;
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text-muted);
+  font-size: 11px;
+  cursor: pointer;
+  transition: all 0.15s;
+  white-space: nowrap;
+}
+
+.toolbar-button:hover {
+  background: var(--bg-card-hover);
+  color: var(--text-secondary);
+}
+
+.toolbar-button-active {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: rgba(233, 69, 96, 0.1);
+}
+
+.toolbar-button-active:hover {
+  background: rgba(233, 69, 96, 0.18);
+}
+
+.toolbar-icon {
+  font-size: 10px;
+}
+
+.toolbar-info {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.toolbar-status {
+  font-family: var(--font-mono);
+  font-size: 10px;
 }

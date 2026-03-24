@@ -34,7 +34,7 @@ class SessionProcess extends EventEmitter {
 
   constructor(
     private cwd: string,
-    private options: StreamOptions = {},
+    public options: StreamOptions = {},
     resumeSessionId?: string
   ) {
     super();
@@ -184,7 +184,14 @@ function getOrCreateProcess(
   resumeSessionId?: string
 ): SessionProcess {
   const existing = processPool.get(sessionKey);
-  if (existing?.alive) return existing;
+  if (existing?.alive) {
+    // If permission setting changed, kill the old process and respawn
+    const wantSkip = !!options.dangerouslySkipPermissions;
+    const hasSkip = !!existing.options.dangerouslySkipPermissions;
+    if (wantSkip === hasSkip) return existing;
+    console.log(`[SessionProcess] Permission setting changed (${hasSkip} → ${wantSkip}), respawning process for ${sessionKey}`);
+    existing.kill();
+  }
 
   // Clean up dead entry
   if (existing) processPool.delete(sessionKey);

@@ -278,8 +278,8 @@ export async function getSessionDetail(sessionId: string): Promise<SessionDetail
               toolCalls.push({
                 name: block.name,
                 input: typeof block.input === 'string'
-                  ? block.input.slice(0, 200)
-                  : JSON.stringify(block.input).slice(0, 200),
+                  ? { raw: block.input }
+                  : block.input,
               });
             }
           }

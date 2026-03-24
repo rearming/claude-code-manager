@@ -8,11 +8,15 @@ const SCROLL_POSITIONS_KEY = 'ccm-scroll-positions';
 interface Settings {
   autoScrollOnNewMessages: boolean;
   dangerouslySkipPermissions: boolean;
+  globalExpandTools: boolean;
+  globalShowDiffs: boolean;
 }
 
 const defaultSettings: Settings = {
   autoScrollOnNewMessages: true,
   dangerouslySkipPermissions: false,
+  globalExpandTools: false,
+  globalShowDiffs: false,
 };
 
 function loadSettings(): Settings {
@@ -86,6 +90,16 @@ export class SessionStore {
 
   setDangerouslySkipPermissions(value: boolean) {
     this.settings.dangerouslySkipPermissions = value;
+    this.persistSettings();
+  }
+
+  toggleGlobalExpandTools() {
+    this.settings.globalExpandTools = !this.settings.globalExpandTools;
+    this.persistSettings();
+  }
+
+  toggleGlobalShowDiffs() {
+    this.settings.globalShowDiffs = !this.settings.globalShowDiffs;
     this.persistSettings();
   }
 

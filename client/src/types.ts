@@ -28,7 +28,7 @@ export interface ConversationMessage {
 
 export interface ToolCallSummary {
   name: string;
-  input: string;
+  input: Record<string, any>;
 }
 
 export interface SessionDetail {
