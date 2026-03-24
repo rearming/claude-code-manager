@@ -1,3 +1,4 @@
+import { GitBranch, GitFork } from 'lucide-react';
 import type { SessionSummary } from '../types';
 
 interface Props {
@@ -34,20 +35,34 @@ export function SessionCard({ session, isSelected, onClick }: Props) {
 
   return (
     <div
-      className={`session-card ${isSelected ? 'session-card-selected' : ''}`}
+      className={`px-4 py-3 border-b border-border cursor-pointer transition-colors hover:bg-zinc-900 ${
+        isSelected ? 'bg-zinc-800 border-l-2 border-l-zinc-400' : ''
+      }`}
       onClick={onClick}
     >
-      <div className="session-card-title">{title || 'Untitled session'}</div>
-      <div className="session-card-preview">
+      <div className="text-sm font-medium text-zinc-200 truncate">{title || 'untitled session'}</div>
+      <div className="text-xs text-zinc-500 mt-1 truncate">
         {truncate(session.firstMessage, 80)}
       </div>
-      <div className="session-card-meta">
-        <span className="meta-time">{formatDate(session.lastTimestamp)}</span>
-        <span className="meta-messages">{session.messageCount} msgs</span>
+      <div className="flex items-center gap-2 mt-1.5 text-xs text-zinc-500">
+        <span>{formatDate(session.lastTimestamp)}</span>
+        <span className="text-zinc-600">·</span>
+        <span>{session.messageCount} msgs</span>
         {session.gitBranch && (
-          <span className="meta-branch">{session.gitBranch}</span>
+          <>
+            <span className="text-zinc-600">·</span>
+            <span className="flex items-center gap-0.5">
+              <GitBranch className="h-3 w-3" />
+              {session.gitBranch}
+            </span>
+          </>
         )}
-        {session.forkedFrom && <span className="meta-fork">forked</span>}
+        {session.forkedFrom && (
+          <>
+            <span className="text-zinc-600">·</span>
+            <GitFork className="h-3 w-3 text-zinc-400" />
+          </>
+        )}
       </div>
     </div>
   );

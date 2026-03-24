@@ -1,5 +1,8 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState } from 'react';
 import { observer } from 'mobx-react-lite';
+import { X, FolderOpen } from 'lucide-react';
+import { Button } from '@/components/shadcn/ui/button';
+import { Input } from '@/components/shadcn/ui/input';
 import type { SessionStore } from '../stores/SessionStore';
 import { browseDirectory, type BrowseResult } from '../api';
 
@@ -48,7 +51,7 @@ export const NewSessionDialog = observer(({ store }: Props) => {
       const data = await browseDirectory(startPath || projectPath || undefined);
       setBrowseData(data);
     } catch {
-      setBrowseError('Failed to browse directory');
+      setBrowseError('failed to browse directory');
     } finally {
       setBrowseLoading(false);
     }
@@ -61,8 +64,7 @@ export const NewSessionDialog = observer(({ store }: Props) => {
       const data = await browseDirectory(dirPath);
       setBrowseData(data);
     } catch {
-      setBrowseError('Cannot access directory');
-      setBrowseLoading(false);
+      setBrowseError('cannot access directory');
     } finally {
       setBrowseLoading(false);
     }
@@ -74,119 +76,112 @@ export const NewSessionDialog = observer(({ store }: Props) => {
   };
 
   return (
-    <div className="settings-overlay" onClick={() => store.closeNewSession()}>
-      <div className="settings-panel new-session-panel" onClick={(e) => e.stopPropagation()}>
-        <div className="settings-header">
-          <h3>New Session</h3>
-          <button className="settings-close" onClick={() => store.closeNewSession()}>
-            &times;
-          </button>
+    <div className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center" onClick={() => store.closeNewSession()}>
+      <div
+        className="w-full max-w-lg bg-background border border-border p-5 space-y-4"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between">
+          <h3 className="text-lg font-bold text-zinc-200">new session</h3>
+          <Button size="icon" variant="ghost" onClick={() => store.closeNewSession()}>
+            <X className="h-4 w-4" />
+          </Button>
         </div>
-        <div className="settings-body">
-          <div className="new-session-field">
-            <label className="new-session-label">Project directory</label>
-            {projectPaths.length > 0 && (
-              <select
-                className="new-session-select"
-                value={projectPath}
-                onChange={(e) => setProjectPath(e.target.value)}
-              >
-                <option value="">Select a project...</option>
-                {projectPaths.map((p) => (
-                  <option key={p} value={p}>{p}</option>
-                ))}
-              </select>
-            )}
-            <div className="path-input-row" style={projectPaths.length > 0 ? { marginTop: 6 } : undefined}>
-              <input
-                className="new-session-input"
-                type="text"
-                placeholder={projectPaths.length > 0 ? 'Or type a custom path...' : '/path/to/project'}
-                value={projectPath}
-                onChange={(e) => setProjectPath(e.target.value)}
-                onKeyDown={handleKeyDown}
-              />
-              <button
-                className="browse-button"
-                onClick={() => openBrowser()}
-                title="Browse folders"
-                type="button"
-              >
-                ...
-              </button>
-            </div>
-          </div>
 
-          {showBrowser && (
-            <div className="folder-browser">
-              {browseLoading && !browseData && (
-                <div className="folder-browser-loading">Loading...</div>
-              )}
-              {browseError && (
-                <div className="folder-browser-error">{browseError}</div>
-              )}
-              {browseData && (
-                <>
-                  <div className="folder-browser-header">
-                    <span className="folder-browser-path" title={browseData.current}>
-                      {browseData.current}
-                    </span>
-                    <button
-                      className="folder-browser-select"
-                      onClick={() => selectDir(browseData.current)}
-                    >
-                      Select this folder
-                    </button>
-                  </div>
-                  <div className="folder-browser-list">
-                    {browseData.parent && (
-                      <div
-                        className="folder-browser-item folder-browser-parent"
-                        onClick={() => navigateTo(browseData.parent!)}
-                      >
-                        ..
-                      </div>
-                    )}
-                    {browseData.dirs.map((d) => (
-                      <div
-                        key={d.path}
-                        className="folder-browser-item"
-                        onClick={() => navigateTo(d.path)}
-                        onDoubleClick={() => selectDir(d.path)}
-                        title={`Click to enter, double-click to select`}
-                      >
-                        <span className="folder-icon">&#128193;</span>
-                        {d.name}
-                      </div>
-                    ))}
-                    {browseData.dirs.length === 0 && (
-                      <div className="folder-browser-empty">No subdirectories</div>
-                    )}
-                  </div>
-                </>
-              )}
-            </div>
+        <div className="space-y-2">
+          <label className="text-xs text-zinc-500 uppercase tracking-wide">project directory</label>
+          {projectPaths.length > 0 && (
+            <select
+              className="w-full h-8 bg-black/50 border border-input text-sm text-zinc-300 px-2 rounded-none focus:outline-none focus:ring-1 focus:ring-ring"
+              value={projectPath}
+              onChange={(e) => setProjectPath(e.target.value)}
+            >
+              <option value="">select a project...</option>
+              {projectPaths.map((p) => (
+                <option key={p} value={p}>{p}</option>
+              ))}
+            </select>
           )}
-
-          <div className="new-session-field">
-            <label className="new-session-label">Message</label>
-            <textarea
-              className="new-session-textarea"
-              placeholder="What would you like to work on?"
-              value={message}
-              onChange={(e) => setMessage(e.target.value)}
+          <div className="flex gap-2">
+            <Input
+              type="text"
+              placeholder={projectPaths.length > 0 ? 'or type a custom path...' : '/path/to/project'}
+              value={projectPath}
+              onChange={(e) => setProjectPath(e.target.value)}
               onKeyDown={handleKeyDown}
-              rows={3}
+              className="bg-black/50"
             />
+            <Button size="icon" variant="outline" onClick={() => openBrowser()} type="button">
+              <FolderOpen className="h-4 w-4" />
+            </Button>
           </div>
-          <button
-            className="new-session-submit"
-            onClick={handleSubmit}
-            disabled={!message.trim() || !projectPath.trim()}
-          >
-            Start Session
-          </button>
         </div>
+
+        {showBrowser && (
+          <div className="border border-border bg-black/30 max-h-[250px] overflow-hidden flex flex-col">
+            {browseLoading && !browseData && (
+              <div className="p-3 text-sm text-zinc-500">loading...</div>
+            )}
+            {browseError && (
+              <div className="p-3 text-sm text-red-400">{browseError}</div>
+            )}
+            {browseData && (
+              <>
+                <div className="px-3 py-2 border-b border-border flex items-center justify-between bg-zinc-900">
+                  <span className="text-xs text-zinc-400 truncate font-[--font-mono]">{browseData.current}</span>
+                  <Button size="sm" variant="outline" onClick={() => selectDir(browseData.current)}>
+                    select this folder
+                  </Button>
+                </div>
+                <div className="flex-1 overflow-y-auto">
+                  {browseData.parent && (
+                    <div
+                      className="px-3 py-1.5 text-sm text-zinc-400 cursor-pointer hover:bg-zinc-900 transition-colors border-b border-zinc-800"
+                      onClick={() => navigateTo(browseData.parent!)}
+                    >
+                      ..
+                    </div>
+                  )}
+                  {browseData.dirs.map((d) => (
+                    <div
+                      key={d.path}
+                      className="px-3 py-1.5 text-sm text-zinc-300 cursor-pointer hover:bg-zinc-900 transition-colors border-b border-zinc-800 flex items-center gap-2"
+                      onClick={() => navigateTo(d.path)}
+                      onDoubleClick={() => selectDir(d.path)}
+                    >
+                      <FolderOpen className="h-3.5 w-3.5 text-zinc-500" />
+                      {d.name}
+                    </div>
+                  ))}
+                  {browseData.dirs.length === 0 && (
+                    <div className="p-3 text-sm text-zinc-500">no subdirectories</div>
+                  )}
+                </div>
+              </>
+            )}
+          </div>
+        )}
+
+        <div className="space-y-2">
+          <label className="text-xs text-zinc-500 uppercase tracking-wide">message</label>
+          <textarea
+            className="w-full bg-black/50 border border-input text-sm text-zinc-300 px-3 py-2 rounded-none resize-none focus:outline-none focus:ring-1 focus:ring-ring placeholder:text-zinc-600 font-[inherit]"
+            placeholder="what would you like to work on?"
+            value={message}
+            onChange={(e) => setMessage(e.target.value)}
+            onKeyDown={handleKeyDown}
+            rows={3}
+          />
+        </div>
+
+        <Button
+          variant="default"
+          className="w-full"
+          onClick={handleSubmit}
+          disabled={!message.trim() || !projectPath.trim()}
+        >
+          start session
+        </Button>
       </div>
     </div>
   );

@@ -1,4 +1,7 @@
 import { observer } from 'mobx-react-lite';
+import { X } from 'lucide-react';
+import { Button } from '@/components/shadcn/ui/button';
+import { Switch } from '@/components/shadcn/ui/switch';
 import type { SessionStore } from '../stores/SessionStore';
 
 interface Props {
@@ -9,43 +12,45 @@ export const SettingsPanel = observer(({ store }: Props) => {
   if (!store.showSettings) return null;
 
   return (
-    <div className="settings-overlay" onClick={() => store.toggleSettings()}>
-      <div className="settings-panel" onClick={(e) => e.stopPropagation()}>
-        <div className="settings-header">
-          <h3>Settings</h3>
-          <button className="settings-close" onClick={() => store.toggleSettings()}>
-            &times;
-          </button>
+    <div className="fixed inset-0 z-50 bg-black/70" onClick={() => store.toggleSettings()}>
+      <div
+        className="absolute right-0 top-0 h-full w-[400px] bg-background border-l border-border p-6 flex flex-col"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between mb-6">
+          <h3 className="text-lg font-bold text-zinc-200">settings</h3>
+          <Button size="icon" variant="ghost" onClick={() => store.toggleSettings()}>
+            <X className="h-4 w-4" />
+          </Button>
         </div>
-        <div className="settings-body">
-          <label className="settings-toggle">
-            <input
-              type="checkbox"
-              checked={store.settings.autoScrollOnNewMessages}
-              onChange={(e) => store.setAutoScroll(e.target.checked)}
-            />
-            <span className="toggle-slider" />
-            <span className="toggle-label">Auto-scroll on new messages</span>
-          </label>
-          <p className="settings-description">
-            Automatically scroll to the bottom when new messages arrive or during streaming responses.
-          </p>
 
-          <div style={{ marginTop: 20 }}>
-            <label className="settings-toggle">
-              <input
-                type="checkbox"
-                checked={store.settings.dangerouslySkipPermissions}
-                onChange={(e) => store.setDangerouslySkipPermissions(e.target.checked)}
-              />
-              <span className="toggle-slider" />
-              <span className="toggle-label">Auto-approve tool calls</span>
-            </label>
-            <p className="settings-description">
-              Skip permission prompts for all tool calls (--dangerously-skip-permissions).
-              Required for sending messages from this UI since there is no approval interface.
-              Only use in trusted environments.
-            </p>
+        <div className="space-y-6">
+          <div className="flex items-start gap-3">
+            <Switch
+              checked={store.settings.autoScrollOnNewMessages}
+              onCheckedChange={(checked) => store.setAutoScroll(checked)}
+            />
+            <div>
+              <div className="text-sm text-zinc-200">auto-scroll on new messages</div>
+              <p className="text-xs text-zinc-500 mt-1">
+                automatically scroll to the bottom when new messages arrive or during streaming responses.
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-start gap-3">
+            <Switch
+              checked={store.settings.dangerouslySkipPermissions}
+              onCheckedChange={(checked) => store.setDangerouslySkipPermissions(checked)}
+            />
+            <div>
+              <div className="text-sm text-zinc-200">auto-approve tool calls</div>
+              <p className="text-xs text-zinc-500 mt-1">
+                skip permission prompts for all tool calls (--dangerously-skip-permissions).
+                required for sending messages from this ui since there is no approval interface.
+                only use in trusted environments.
+              </p>
+            </div>
           </div>
         </div>
       </div>
