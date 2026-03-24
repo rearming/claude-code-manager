@@ -9,7 +9,6 @@ interface Props {
 }
 
 export const TerminalPanel = observer(({ store }: Props) => {
-  const [input, setInput] = useState('');
   const [width, setWidth] = useState(480);
   const outputRef = useRef<HTMLDivElement>(null);
   const dragging = useRef(false);
@@ -22,10 +21,10 @@ export const TerminalPanel = observer(({ store }: Props) => {
   }, [store.rawLines.length]);
 
   const handleSend = () => {
-    const trimmed = input.trim();
+    const trimmed = store.terminalInput.trim();
     if (!trimmed || !store.selectedSessionId || store.sending) return;
     store.sendMessage(store.selectedSessionId, trimmed);
-    setInput('');
+    store.setTerminalInput('');
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -101,8 +100,8 @@ export const TerminalPanel = observer(({ store }: Props) => {
         <textarea
           className="flex-1 bg-black/50 border border-input text-xs text-zinc-300 px-2 py-1.5 rounded-none resize-none focus:outline-none focus:ring-1 focus:ring-ring placeholder:text-zinc-600 font-[--font-mono]"
           placeholder={store.sending ? 'streaming...' : 'send raw message...'}
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
+          value={store.terminalInput}
+          onChange={(e) => store.setTerminalInput(e.target.value)}
           onKeyDown={handleKeyDown}
           disabled={store.sending || !store.selectedSessionId}
           rows={2}
@@ -111,7 +110,7 @@ export const TerminalPanel = observer(({ store }: Props) => {
           size="icon"
           variant="outline"
           onClick={handleSend}
-          disabled={!input.trim() || store.sending || !store.selectedSessionId}
+          disabled={!store.terminalInput.trim() || store.sending || !store.selectedSessionId}
           className="self-end"
         >
           <Send className="h-3.5 w-3.5" />

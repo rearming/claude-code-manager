@@ -320,6 +320,26 @@ export async function getSessionDetail(sessionId: string): Promise<SessionDetail
     return null;
   }
 
+  // Enrich non-sidechain assistant messages with tool calls from sidechain (subagent) messages.
+  // Walk messages in order: collect sidechain tool calls and attach them to the closest
+  // preceding non-sidechain assistant message that has an Agent tool call.
+  let lastAgentMessage: ConversationMessage | null = null;
+  for (const msg of messages) {
+    if (!msg.isSidechain && msg.type === 'assistant') {
+      // Check if this message has an Agent tool call
+      if (msg.toolCalls?.some((tc) => tc.name === 'Agent')) {
+        lastAgentMessage = msg;
+      } else {
+        lastAgentMessage = null;
+      }
+    } else if (msg.isSidechain && msg.type === 'assistant' && msg.toolCalls && lastAgentMessage) {
+      if (!lastAgentMessage.subagentToolCalls) lastAgentMessage.subagentToolCalls = [];
+      lastAgentMessage.subagentToolCalls.push(...msg.toolCalls);
+    }
+  }
+
+  const mainMessages = messages.filter((m) => !m.isSidechain);
+
   const historyEntry = await getHistoryEntry(sessionId);
 
   return {
@@ -328,17 +348,17 @@ export async function getSessionDetail(sessionId: string): Promise<SessionDetail
       project: summary.project || projectDirToName(projDir),
       projectName: projDir,
       slug: summary.slug || null,
-      firstMessage: historyEntry?.firstMessage || messages[0]?.content || '',
+      firstMessage: historyEntry?.firstMessage || mainMessages[0]?.content || '',
       timestamp: summary.timestamp || 0,
-      lastTimestamp: messages.length > 0
-        ? new Date(messages[messages.length - 1].timestamp).getTime()
+      lastTimestamp: mainMessages.length > 0
+        ? new Date(mainMessages[mainMessages.length - 1].timestamp).getTime()
         : summary.timestamp || 0,
-      messageCount: messages.filter((m) => m.type === 'user').length,
+      messageCount: mainMessages.filter((m) => m.type === 'user').length,
       version: summary.version || null,
       gitBranch: summary.gitBranch || null,
       forkedFrom: summary.forkedFrom || null,
     },
-    messages: messages.filter((m) => !m.isSidechain),
+    messages: mainMessages,
   };
 }
 

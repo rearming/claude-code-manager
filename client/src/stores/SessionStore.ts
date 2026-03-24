@@ -4,12 +4,15 @@ import { fetchSessions, fetchSessionDetail, resumeSession, forkSessionAt, stream
 
 const SETTINGS_KEY = 'ccm-settings';
 const SCROLL_POSITIONS_KEY = 'ccm-scroll-positions';
+const RAW_LINES_KEY = 'ccm-raw-lines';
+const TERMINAL_INPUT_KEY = 'ccm-terminal-input';
 
 interface Settings {
   autoScrollOnNewMessages: boolean;
   dangerouslySkipPermissions: boolean;
   globalExpandTools: boolean;
   globalShowDiffs: boolean;
+  showTerminal: boolean;
 }
 
 const defaultSettings: Settings = {
@@ -17,6 +20,7 @@ const defaultSettings: Settings = {
   dangerouslySkipPermissions: false,
   globalExpandTools: false,
   globalShowDiffs: false,
+  showTerminal: false,
 };
 
 function loadSettings(): Settings {
@@ -34,6 +38,23 @@ function loadScrollPositions(): Record<string, { position: number; messageCount:
     return raw ? JSON.parse(raw) : {};
   } catch {
     return {};
+  }
+}
+
+function loadRawLines(): string[] {
+  try {
+    const raw = sessionStorage.getItem(RAW_LINES_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch {
+    return [];
+  }
+}
+
+function loadTerminalInput(): string {
+  try {
+    return sessionStorage.getItem(TERMINAL_INPUT_KEY) || '';
+  } catch {
+    return '';
   }
 }
 
@@ -60,9 +81,9 @@ export class SessionStore {
   sending = false;
   streamingText = '';
   abortStream: (() => void) | null = null;
-  showTerminal = false;
-  rawLines: string[] = [];
+  rawLines: string[] = loadRawLines();
   streamingToolCalls: StreamingToolCall[] = [];
+  terminalInput: string = loadTerminalInput();
   lastRawEventTime: number = 0;
   settings: Settings = loadSettings();
   scrollPositions: Record<string, { position: number; messageCount: number } | number> = loadScrollPositions();
@@ -76,8 +97,13 @@ export class SessionStore {
     this.showSettings = !this.showSettings;
   }
 
+  get showTerminal() {
+    return this.settings.showTerminal;
+  }
+
   toggleTerminal() {
-    this.showTerminal = !this.showTerminal;
+    this.settings.showTerminal = !this.settings.showTerminal;
+    this.persistSettings();
   }
 
   appendRawLine(line: string) {
@@ -87,6 +113,7 @@ export class SessionStore {
       this.rawLines = this.rawLines.slice(-800);
     }
     this.lastRawEventTime = Date.now();
+    this.persistRawLines();
 
     // Parse raw events to extract tool call info for live streaming display
     try {
@@ -98,19 +125,68 @@ export class SessionStore {
   }
 
   private processStreamEvent(event: Record<string, unknown>) {
-    // assistant event: contains complete message with text + tool_use blocks
-    if (event.type === 'assistant') {
-      const msg = event.message as { content?: Array<{ type: string; id?: string; name?: string; input?: Record<string, unknown>; text?: string }> } | undefined;
-      if (msg?.content && Array.isArray(msg.content)) {
-        // Mark all currently-running tool calls as done (new assistant turn means previous tools finished)
+    // content_block_start: primary source for tool call detection during streaming
+    if (event.type === 'content_block_start') {
+      const block = (event as { content_block?: { type: string; id?: string; name?: string }; index?: number }).content_block;
+      if (block?.type === 'tool_use' && block.name) {
+        const exists = block.id && this.streamingToolCalls.some(tc => tc.id === block.id);
+        if (!exists) {
+          this.streamingToolCalls.push({
+            id: block.id,
+            name: block.name,
+            input: {},
+            status: 'running',
+          });
+        }
+      }
+      // Track the current block index for matching deltas
+      if (block?.type === 'text') {
+        // A new text block starting means previous tool calls are done
         for (const tc of this.streamingToolCalls) {
           if (tc.status === 'running') tc.status = 'done';
         }
-        // Extract new tool_use blocks
+      }
+    }
+
+    // content_block_delta: accumulate tool input JSON as it streams in
+    if (event.type === 'content_block_delta') {
+      const delta = (event as { delta?: { type?: string; partial_json?: string } }).delta;
+      if (delta?.type === 'input_json_delta' && delta.partial_json) {
+        // Find the last running tool call and append to its raw input
+        const lastRunning = [...this.streamingToolCalls].reverse().find(tc => tc.status === 'running');
+        if (lastRunning) {
+          // Accumulate partial JSON; parse when complete
+          const raw = ((lastRunning as any)._rawInput || '') + delta.partial_json;
+          (lastRunning as any)._rawInput = raw;
+          try {
+            lastRunning.input = JSON.parse(raw);
+          } catch {
+            // Incomplete JSON, wait for more deltas
+          }
+        }
+      }
+    }
+
+    // content_block_stop: mark tool calls when their block ends
+    if (event.type === 'content_block_stop') {
+      // The stopped block's tool call input is now complete
+      // (input was accumulated via content_block_delta)
+    }
+
+    // assistant event: fallback for when assistant events arrive on stdout
+    // (may not happen in stream-json mode, but handle for robustness)
+    if (event.type === 'assistant') {
+      const msg = event.message as { content?: Array<{ type: string; id?: string; name?: string; input?: Record<string, unknown>; text?: string }> } | undefined;
+      if (msg?.content && Array.isArray(msg.content)) {
         for (const block of msg.content) {
           if (block.type === 'tool_use' && block.name) {
-            const exists = block.id && this.streamingToolCalls.some(tc => tc.id === block.id);
-            if (!exists) {
+            const existing = block.id ? this.streamingToolCalls.find(tc => tc.id === block.id) : undefined;
+            if (existing) {
+              // Update input from the complete assistant event
+              if (block.input && Object.keys(block.input).length > 0) {
+                existing.input = block.input;
+              }
+            } else {
               this.streamingToolCalls.push({
                 id: block.id,
                 name: block.name,
@@ -123,25 +199,24 @@ export class SessionStore {
       }
     }
 
-    // content_block_start: early notification of a tool_use block starting
-    if (event.type === 'content_block_start') {
-      const block = (event as { content_block?: { type: string; id?: string; name?: string } }).content_block;
-      if (block?.type === 'tool_use' && block.name) {
-        const exists = block.id && this.streamingToolCalls.some(tc => tc.id === block.id);
-        if (!exists) {
-          this.streamingToolCalls.push({
-            id: block.id,
-            name: block.name,
-            input: {},
-            status: 'running',
-          });
-        }
+    // result event: mark all remaining running tool calls as done
+    if (event.type === 'result') {
+      for (const tc of this.streamingToolCalls) {
+        if (tc.status === 'running') tc.status = 'done';
       }
     }
   }
 
   clearRawLines() {
     this.rawLines = [];
+    // Persist immediately on clear (bypass debounce)
+    if (this._rawLinesPersistTimer) clearTimeout(this._rawLinesPersistTimer);
+    sessionStorage.setItem(RAW_LINES_KEY, '[]');
+  }
+
+  setTerminalInput(value: string) {
+    this.terminalInput = value;
+    sessionStorage.setItem(TERMINAL_INPUT_KEY, value);
   }
 
   setAutoScroll(value: boolean) {
@@ -183,6 +258,20 @@ export class SessionStore {
 
   private persistScrollPositions() {
     localStorage.setItem(SCROLL_POSITIONS_KEY, JSON.stringify(this.scrollPositions));
+  }
+
+  private _rawLinesPersistTimer: ReturnType<typeof setTimeout> | null = null;
+
+  private persistRawLines() {
+    // Debounce writes during rapid streaming
+    if (this._rawLinesPersistTimer) clearTimeout(this._rawLinesPersistTimer);
+    this._rawLinesPersistTimer = setTimeout(() => {
+      try {
+        sessionStorage.setItem(RAW_LINES_KEY, JSON.stringify(this.rawLines));
+      } catch {
+        // sessionStorage full — silently ignore
+      }
+    }, 500);
   }
 
   get projects(): string[] {
@@ -361,7 +450,7 @@ export class SessionStore {
     this.selectedSessionId = null;
     this.selectedDetail = null;
 
-    this.rawLines = [];
+    this.clearRawLines();
     this.streamingToolCalls = [];
     const abort = streamNewSession(message, projectPath, this.settings.dangerouslySkipPermissions, {
       images: images,
@@ -421,7 +510,7 @@ export class SessionStore {
     this.pendingUserMessage = message;
     this.pendingImages = images || null;
     this.error = null;
-    this.rawLines = [];
+    this.clearRawLines();
     this.streamingToolCalls = [];
 
     const abort = streamMessageToSession(sessionId, message, this.settings.dangerouslySkipPermissions, {

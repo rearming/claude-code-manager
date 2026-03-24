@@ -582,6 +582,44 @@ function MessageBubble({ message, messageIndex, totalMessages, onFork, onInsertI
           )}
         </div>
       )}
+
+      {/* subagent tool calls */}
+      {message.subagentToolCalls && message.subagentToolCalls.length > 0 && (
+        <SubagentToolCallsView toolCalls={message.subagentToolCalls} />
+      )}
+    </div>
+  );
+}
+
+function SubagentToolCallsView({ toolCalls }: { toolCalls: ToolCallSummary[] }) {
+  const [expanded, setExpanded] = useState(false);
+  return (
+    <div className="mt-2 border-t border-zinc-800 pt-2">
+      <button
+        className={`text-xs flex items-center gap-1 px-2 py-0.5 border transition-colors ${
+          expanded ? 'border-zinc-600 text-zinc-300 bg-zinc-800' : 'border-border text-zinc-500 hover:text-zinc-300'
+        }`}
+        onClick={() => setExpanded(!expanded)}
+      >
+        {expanded ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
+        {toolCalls.length} subagent tool call{toolCalls.length > 1 ? 's' : ''}
+      </button>
+      {expanded ? (
+        <div className="mt-2 space-y-1 ml-3 border-l-2 border-zinc-800 pl-2">
+          {toolCalls.map((tc, i) => (
+            <ToolCallView key={i} tool={tc} showDiff={false} />
+          ))}
+        </div>
+      ) : (
+        <div className="mt-1.5 flex flex-wrap gap-1 ml-3">
+          {toolCalls.map((tc, i) => (
+            <span key={i} className="inline-flex items-center gap-1 text-xs border border-zinc-800 px-1.5 py-0.5 bg-black/20">
+              <span className="text-zinc-500 font-medium">{tc.name}</span>
+              <span className="text-zinc-600 truncate max-w-[180px]">{getToolSummary(tc)}</span>
+            </span>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

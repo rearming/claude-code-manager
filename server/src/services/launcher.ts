@@ -29,6 +29,8 @@ class SessionProcess extends EventEmitter {
   buffer = '';
   alive = true;
   idleTimer: ReturnType<typeof setTimeout> | null = null;
+  /** Track whether we've seen content_block_delta events for text dedup */
+  private seenContentDeltas = false;
 
   private static IDLE_TIMEOUT = 5 * 60 * 1000; // 5 minutes
 
@@ -110,12 +112,23 @@ class SessionProcess extends EventEmitter {
         this.sessionId = event.session_id as string;
         this.model = event.model as string;
         this.emit('init', { sessionId: this.sessionId, model: this.model });
+      } else if (event.type === 'content_block_delta') {
+        // Real-time text streaming from content block deltas
+        const delta = event.delta as { type?: string; text?: string } | undefined;
+        if (delta?.type === 'text_delta' && delta.text) {
+          this.seenContentDeltas = true;
+          this.emit('text', delta.text);
+        }
       } else if (event.type === 'assistant') {
-        const content = (event.message as { content?: Array<{ type: string; text?: string }> })?.content;
-        if (Array.isArray(content)) {
-          for (const block of content) {
-            if (block.type === 'text' && block.text) {
-              this.emit('text', block.text);
+        // Fallback text extraction from complete assistant messages
+        // (only if we haven't seen content_block_delta events, to avoid double text)
+        if (!this.seenContentDeltas) {
+          const content = (event.message as { content?: Array<{ type: string; text?: string }> })?.content;
+          if (Array.isArray(content)) {
+            for (const block of content) {
+              if (block.type === 'text' && block.text) {
+                this.emit('text', block.text);
+              }
             }
           }
         }
@@ -125,6 +138,7 @@ class SessionProcess extends EventEmitter {
           durationMs: event.duration_ms,
           cost: event.total_cost_usd,
         });
+        this.seenContentDeltas = false;
         // After result, the turn is done — reset idle timer
         this.resetIdleTimer();
       }

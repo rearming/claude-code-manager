@@ -29,6 +29,7 @@ export interface ConversationMessage {
   images?: ImageAttachment[];
   model?: string;
   toolCalls?: ToolCallSummary[];
+  subagentToolCalls?: ToolCallSummary[];
   isSidechain: boolean;
 }
 
