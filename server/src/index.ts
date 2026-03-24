@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 import sessionsRouter from './routes/sessions.js';
 import launchRouter from './routes/launch.js';
 import browseRouter from './routes/browse.js';
+import imagesRouter from './routes/images.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -18,6 +19,7 @@ app.use(express.json({ limit: '50mb' }));
 app.use('/api/sessions', sessionsRouter);
 app.use('/api/sessions', launchRouter);
 app.use('/api/browse', browseRouter);
+app.use('/api/images', imagesRouter);
 
 // Serve static client build in production
 const clientDist = path.join(__dirname, '..', '..', 'client', 'dist');

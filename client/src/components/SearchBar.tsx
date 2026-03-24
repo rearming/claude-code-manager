@@ -1,6 +1,13 @@
 import { observer } from 'mobx-react-lite';
 import { Search } from 'lucide-react';
 import { Input } from '@/components/shadcn/ui/input';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/shadcn/ui/select';
 import type { SessionStore } from '../stores/SessionStore';
 
 interface Props {
@@ -20,27 +27,35 @@ export const SearchBar = observer(({ store }: Props) => {
           className="pl-8 h-8 text-sm bg-black/50"
         />
       </div>
-      <div className="flex gap-2">
-        <select
-          value={store.projectFilter}
-          onChange={(e) => store.setProjectFilter(e.target.value)}
-          className="flex-1 h-7 bg-black/50 border border-input text-sm text-zinc-300 px-2 rounded-none focus:outline-none focus:ring-1 focus:ring-ring"
-        >
-          <option value="">all projects</option>
+      <Select
+        value={store.projectFilter}
+        onValueChange={(val) => store.setProjectFilter(val === '__all__' ? '' : val)}
+      >
+        <SelectTrigger className="w-full h-7 bg-black/50 text-sm text-zinc-300">
+          <SelectValue placeholder="all projects" />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="__all__">all projects</SelectItem>
           {store.projects.map((p) => (
-            <option key={p} value={p}>{p}</option>
+            <SelectItem key={p} value={p}>
+              {p.replace(/-/g, ' ').replace(/^-*Users-\w+-/, '')}
+            </SelectItem>
           ))}
-        </select>
-        <select
-          value={store.sortBy}
-          onChange={(e) => store.setSortBy(e.target.value as 'date' | 'messages' | 'project')}
-          className="h-7 bg-black/50 border border-input text-sm text-zinc-300 px-2 rounded-none focus:outline-none focus:ring-1 focus:ring-ring"
-        >
-          <option value="date">sort by date</option>
-          <option value="messages">sort by messages</option>
-          <option value="project">sort by project</option>
-        </select>
-      </div>
+        </SelectContent>
+      </Select>
+      <Select
+        value={store.sortBy}
+        onValueChange={(val) => store.setSortBy(val as 'date' | 'messages' | 'project')}
+      >
+        <SelectTrigger className="w-full h-7 bg-black/50 text-sm text-zinc-300">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="date">sort by date</SelectItem>
+          <SelectItem value="messages">sort by messages</SelectItem>
+          <SelectItem value="project">sort by project</SelectItem>
+        </SelectContent>
+      </Select>
     </div>
   );
 });

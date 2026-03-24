@@ -100,6 +100,35 @@ export function streamMessageToSession(
   return streamSSE(`${BASE}/sessions/${sessionId}/send`, { message, dangerouslySkipPermissions, images }, cbs);
 }
 
+export async function cacheImage(
+  data: string,
+  mediaType: string,
+  sessionId?: string,
+  messageUuid?: string
+): Promise<{ hash: string; mediaType: string }> {
+  const res = await fetch(`${BASE}/images`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ data, mediaType, sessionId, messageUuid }),
+  });
+  if (!res.ok) throw new Error('Failed to cache image');
+  return res.json();
+}
+
+export async function saveAnnotatedImage(
+  data: string,
+  mediaType: string,
+  originalHash: string
+): Promise<{ hash: string }> {
+  const res = await fetch(`${BASE}/images/annotated`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ data, mediaType, originalHash }),
+  });
+  if (!res.ok) throw new Error('Failed to save annotated image');
+  return res.json();
+}
+
 function streamSSE(
   url: string,
   body: object,

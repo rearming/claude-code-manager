@@ -1,11 +1,20 @@
-import { useState, useRef, useEffect, useCallback } from 'react';
+import { useState, useRef, useEffect, useCallback, useImperativeHandle, forwardRef } from 'react';
 import { observer } from 'mobx-react-lite';
 import Markdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import rehypeHighlight from 'rehype-highlight';
 import 'highlight.js/styles/github-dark.min.css';
-import { ArrowLeft, GitFork, Copy, ChevronDown, ChevronRight, ArrowDown, Send, X, ImagePlus } from 'lucide-react';
+import { ArrowLeft, GitFork, Copy, ChevronDown, ChevronRight, ArrowDown, Send, X, ImagePlus, Pencil, Download, ClipboardCopy, MessageSquarePlus } from 'lucide-react';
 import { Button } from '@/components/shadcn/ui/button';
+import {
+  Dialog,
+  DialogContent,
+  DialogTitle,
+} from '@/components/shadcn/ui/dialog';
+import { VisuallyHidden } from '@radix-ui/react-visually-hidden';
+import AnnotationCanvas from './AnnotationCanvas';
+import type { DrawCommand } from './AnnotationCanvas';
+import { cacheImage, saveAnnotatedImage } from '../api';
 import type { SessionStore } from '../stores/SessionStore';
 import type { ConversationMessage, ToolCallSummary, ImageAttachment } from '../types';
 
@@ -76,12 +85,18 @@ export const SessionDetail = observer(({ store }: Props) => {
     }
   }, [store.pendingUserMessage, store.settings.autoScrollOnNewMessages, scrollToBottom]);
 
+  const messageInputRef = useRef<MessageInputHandle>(null);
+
   const handleResume = async () => {
     await store.resume(summary.sessionId);
   };
 
   const handleCopy = (text: string) => {
     navigator.clipboard.writeText(text);
+  };
+
+  const handleInsertImage = (attachment: ImageAttachment) => {
+    messageInputRef.current?.addImageAttachment(attachment);
   };
 
   const handleFork = async (messageUuid: string) => {
@@ -163,6 +178,7 @@ export const SessionDetail = observer(({ store }: Props) => {
               messageIndex={index}
               totalMessages={messages.length}
               onFork={handleFork}
+              onInsertImage={handleInsertImage}
               forking={store.forking}
               globalExpand={store.settings.globalExpandTools}
               globalDiffs={store.settings.globalShowDiffs}
@@ -222,6 +238,7 @@ export const SessionDetail = observer(({ store }: Props) => {
       </div>
 
       <MessageInput
+        ref={messageInputRef}
         onSend={(msg, images) => store.sendMessage(summary.sessionId, msg, images)}
         sending={store.sending}
         onCancel={() => store.cancelSend()}
@@ -235,15 +252,20 @@ interface MessageBubbleProps {
   messageIndex: number;
   totalMessages: number;
   onFork: (uuid: string) => void;
+  onInsertImage: (attachment: ImageAttachment) => void;
   forking: boolean;
   globalExpand: boolean;
   globalDiffs: boolean;
 }
 
-function MessageBubble({ message, messageIndex, totalMessages, onFork, forking, globalExpand, globalDiffs }: MessageBubbleProps) {
+function MessageBubble({ message, messageIndex, totalMessages, onFork, onInsertImage, forking, globalExpand, globalDiffs }: MessageBubbleProps) {
   const [localExpand, setLocalExpand] = useState<boolean | null>(null);
   const [localDiffs, setLocalDiffs] = useState<boolean | null>(null);
   const [confirmFork, setConfirmFork] = useState(false);
+  const [previewImage, setPreviewImage] = useState<{ src: string; mediaType: string; data: string } | null>(null);
+  const [annotating, setAnnotating] = useState(false);
+  const [annotatedSrc, setAnnotatedSrc] = useState<string | null>(null);
+  const [annotationCommands, setAnnotationCommands] = useState<DrawCommand[]>([]);
   const isUser = message.type === 'user';
 
   const showTools = localExpand !== null ? localExpand : globalExpand;
@@ -307,10 +329,121 @@ function MessageBubble({ message, messageIndex, totalMessages, onFork, forking, 
       {/* images */}
       {message.images && message.images.length > 0 && (
         <div className="flex gap-2 mb-2 flex-wrap">
-          {message.images.map((img, i) => (
-            <img key={i} src={`data:${img.mediaType};base64,${img.data}`} alt={`attachment ${i + 1}`} className="max-h-48 max-w-xs border border-border" />
-          ))}
+          {message.images.map((img, i) => {
+            const src = `data:${img.mediaType};base64,${img.data}`;
+            return (
+              <img
+                key={i}
+                src={src}
+                alt={`attachment ${i + 1}`}
+                className="max-h-48 max-w-xs border border-border cursor-pointer hover:border-zinc-400 transition-colors"
+                onClick={() => setPreviewImage({ src, mediaType: img.mediaType, data: img.data })}
+              />
+            );
+          })}
         </div>
+      )}
+
+      {/* image preview dialog */}
+      {previewImage && !annotating && (
+        <Dialog open onOpenChange={(open) => { if (!open) { setPreviewImage(null); setAnnotatedSrc(null); setAnnotationCommands([]); } }}>
+          <DialogContent className="max-w-[90vw] max-h-[90vh] p-0 border-zinc-700" withCloseButton={false}>
+            <VisuallyHidden><DialogTitle>Image Preview</DialogTitle></VisuallyHidden>
+            <div className="relative flex flex-col">
+              <div className="flex items-center gap-2 px-3 py-2 border-b border-zinc-700 bg-black/80">
+                {annotatedSrc && (
+                  <span className="text-xs text-green-500 mr-1">annotated</span>
+                )}
+                <div className="flex-1" />
+                {annotatedSrc && (
+                  <>
+                    <button
+                      className="flex items-center gap-1.5 px-3 py-1.5 text-xs border border-zinc-700 text-zinc-300 hover:text-white hover:bg-zinc-700 transition-colors rounded-none"
+                      onClick={() => {
+                        const a = document.createElement('a');
+                        a.href = annotatedSrc;
+                        a.download = `annotated-${Date.now()}.png`;
+                        a.click();
+                      }}
+                    >
+                      <Download className="h-3.5 w-3.5" />
+                      download
+                    </button>
+                    <button
+                      className="flex items-center gap-1.5 px-3 py-1.5 text-xs border border-zinc-700 text-zinc-300 hover:text-white hover:bg-zinc-700 transition-colors rounded-none"
+                      onClick={async () => {
+                        try {
+                          const res = await fetch(annotatedSrc);
+                          const blob = await res.blob();
+                          await navigator.clipboard.write([new ClipboardItem({ [blob.type]: blob })]);
+                        } catch (e) {
+                          console.error('Failed to copy to clipboard:', e);
+                        }
+                      }}
+                    >
+                      <ClipboardCopy className="h-3.5 w-3.5" />
+                      copy
+                    </button>
+                    <button
+                      className="flex items-center gap-1.5 px-3 py-1.5 text-xs border border-zinc-700 text-zinc-300 hover:text-white hover:bg-zinc-700 transition-colors rounded-none"
+                      onClick={() => {
+                        const base64 = annotatedSrc.split(',')[1];
+                        onInsertImage({ mediaType: 'image/png', data: base64 });
+                        setPreviewImage(null);
+                        setAnnotatedSrc(null);
+                        setAnnotationCommands([]);
+                      }}
+                    >
+                      <MessageSquarePlus className="h-3.5 w-3.5" />
+                      insert into chat
+                    </button>
+                  </>
+                )}
+                <button
+                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs border border-zinc-700 text-zinc-300 hover:text-white hover:bg-zinc-700 transition-colors rounded-none"
+                  onClick={() => { setAnnotatedSrc(null); setAnnotating(true); }}
+                >
+                  <Pencil className="h-3.5 w-3.5" />
+                  {annotatedSrc ? 're-annotate' : 'annotate'}
+                </button>
+                <button
+                  className="flex items-center justify-center w-7 h-7 border border-zinc-700 text-zinc-400 hover:text-white hover:bg-zinc-700 transition-colors rounded-none"
+                  onClick={() => { setPreviewImage(null); setAnnotatedSrc(null); setAnnotationCommands([]); }}
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+              <div className="flex items-center justify-center p-4 bg-black/50 overflow-auto">
+                <img
+                  src={annotatedSrc || previewImage.src}
+                  alt="preview"
+                  className="max-w-full max-h-[80vh] border border-zinc-800"
+                />
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
+      )}
+
+      {/* annotation editor (full-screen overlay) */}
+      {previewImage && annotating && (
+        <AnnotationCanvas
+          imageSrc={previewImage.src}
+          initialCommands={annotationCommands}
+          onSave={async (annotatedDataUrl, commands) => {
+            try {
+              const cached = await cacheImage(previewImage.data, previewImage.mediaType);
+              const annotatedBase64 = annotatedDataUrl.split(',')[1];
+              await saveAnnotatedImage(annotatedBase64, 'image/png', cached.hash);
+            } catch (e) {
+              console.error('Failed to save annotation:', e);
+            }
+            setAnnotatedSrc(annotatedDataUrl);
+            setAnnotationCommands(commands);
+            setAnnotating(false);
+          }}
+          onClose={() => setAnnotating(false)}
+        />
       )}
 
       {/* content */}
@@ -475,6 +608,10 @@ function ToolCallFormatted({ input, toolName }: { input: Record<string, unknown>
   );
 }
 
+interface MessageInputHandle {
+  addImageAttachment: (attachment: ImageAttachment) => void;
+}
+
 interface MessageInputProps {
   onSend: (message: string, images?: ImageAttachment[]) => void;
   onCancel: () => void;
@@ -496,12 +633,18 @@ function fileToImageAttachment(file: File): Promise<ImageAttachment> {
   });
 }
 
-function MessageInput({ onSend, onCancel, sending }: MessageInputProps) {
+const MessageInput = forwardRef<MessageInputHandle, MessageInputProps>(function MessageInput({ onSend, onCancel, sending }, ref) {
   const [text, setText] = useState('');
   const [images, setImages] = useState<ImageAttachment[]>([]);
   const [dragOver, setDragOver] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  useImperativeHandle(ref, () => ({
+    addImageAttachment: (attachment: ImageAttachment) => {
+      setImages(prev => [...prev, attachment]);
+    },
+  }));
 
   const addImages = useCallback(async (files: File[]) => {
     const valid = files.filter(f => ACCEPTED_IMAGE_TYPES.includes(f.type));
@@ -630,4 +773,4 @@ function MessageInput({ onSend, onCancel, sending }: MessageInputProps) {
       </div>
     </div>
   );
-}
+});
