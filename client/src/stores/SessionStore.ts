@@ -1,5 +1,5 @@
 import { makeAutoObservable, runInAction } from 'mobx';
-import type { SessionSummary, SessionDetail, ForkResult } from '../types';
+import type { SessionSummary, SessionDetail, ForkResult, ImageAttachment } from '../types';
 import { fetchSessions, fetchSessionDetail, resumeSession, forkSessionAt, streamMessageToSession, streamNewSession } from '../api';
 
 const SETTINGS_KEY = 'ccm-settings';
@@ -274,6 +274,7 @@ export class SessionStore {
   }
 
   pendingUserMessage: string | null = null;
+  pendingImages: ImageAttachment[] | null = null;
   scrollToBottomOnLoad = false;
   showNewSession = false;
   newSessionId: string | null = null;
@@ -286,11 +287,12 @@ export class SessionStore {
     this.showNewSession = false;
   }
 
-  startNewSession(message: string, projectPath: string) {
+  startNewSession(message: string, projectPath: string, images?: ImageAttachment[]) {
     this.showNewSession = false;
     this.sending = true;
     this.streamingText = '';
     this.pendingUserMessage = message;
+    this.pendingImages = images || null;
     this.newSessionId = null;
     this.error = null;
 
@@ -300,6 +302,7 @@ export class SessionStore {
 
     this.rawLines = [];
     const abort = streamNewSession(message, projectPath, this.settings.dangerouslySkipPermissions, {
+      images: images,
       onInit: (data) => {
         runInAction(() => {
           this.newSessionId = data.sessionId;
@@ -327,12 +330,14 @@ export class SessionStore {
           this.error = error;
           this.sending = false;
           this.pendingUserMessage = null;
+          this.pendingImages = null;
         });
       },
       onDone: () => {
         runInAction(() => {
           this.sending = false;
           this.pendingUserMessage = null;
+          this.pendingImages = null;
           this.abortStream = null;
           const sid = this.newSessionId;
           this.newSessionId = null;
@@ -348,14 +353,16 @@ export class SessionStore {
     this.abortStream = abort;
   }
 
-  sendMessage(sessionId: string, message: string) {
+  sendMessage(sessionId: string, message: string, images?: ImageAttachment[]) {
     this.sending = true;
     this.streamingText = '';
     this.pendingUserMessage = message;
+    this.pendingImages = images || null;
     this.error = null;
     this.rawLines = [];
 
     const abort = streamMessageToSession(sessionId, message, this.settings.dangerouslySkipPermissions, {
+      images: images,
       onText: (text) => {
         runInAction(() => {
           this.streamingText += text;
@@ -379,12 +386,14 @@ export class SessionStore {
           this.error = error;
           this.sending = false;
           this.pendingUserMessage = null;
+          this.pendingImages = null;
         });
       },
       onDone: () => {
         runInAction(() => {
           this.sending = false;
           this.pendingUserMessage = null;
+          this.pendingImages = null;
           this.abortStream = null;
           this.scrollToBottomOnLoad = true;
           // Keep streamingText visible until reload completes

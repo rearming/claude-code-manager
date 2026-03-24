@@ -1,4 +1,4 @@
-import type { SessionSummary, SessionDetail, ForkResult } from './types';
+import type { SessionSummary, SessionDetail, ForkResult, ImageAttachment } from './types';
 
 const BASE = '/api';
 
@@ -63,6 +63,7 @@ export async function forkSessionAt(
 }
 
 export interface StreamCallbacks {
+  images?: ImageAttachment[];
   onInit?: (data: { sessionId: string; model: string }) => void;
   onText?: (text: string) => void;
   onRaw?: (data: string) => void;
@@ -81,7 +82,8 @@ export function streamNewSession(
   dangerouslySkipPermissions: boolean,
   callbacks: StreamCallbacks
 ): () => void {
-  return streamSSE(`${BASE}/sessions/new`, { message, projectPath, dangerouslySkipPermissions }, callbacks);
+  const { images, ...cbs } = callbacks;
+  return streamSSE(`${BASE}/sessions/new`, { message, projectPath, dangerouslySkipPermissions, images }, cbs);
 }
 
 /**
@@ -94,7 +96,8 @@ export function streamMessageToSession(
   dangerouslySkipPermissions: boolean,
   callbacks: StreamCallbacks
 ): () => void {
-  return streamSSE(`${BASE}/sessions/${sessionId}/send`, { message, dangerouslySkipPermissions }, callbacks);
+  const { images, ...cbs } = callbacks;
+  return streamSSE(`${BASE}/sessions/${sessionId}/send`, { message, dangerouslySkipPermissions, images }, cbs);
 }
 
 function streamSSE(

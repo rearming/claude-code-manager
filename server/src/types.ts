@@ -15,12 +15,18 @@ export interface SessionSummary {
   } | null;
 }
 
+export interface ImageAttachment {
+  mediaType: string;
+  data: string;
+}
+
 export interface ConversationMessage {
   uuid: string;
   parentUuid: string | null;
   type: 'user' | 'assistant' | 'system';
   timestamp: string;
   content: string;
+  images?: ImageAttachment[];
   model?: string;
   toolCalls?: ToolCallSummary[];
   isSidechain: boolean;

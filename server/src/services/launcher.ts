@@ -133,15 +133,30 @@ class SessionProcess extends EventEmitter {
     }
   }
 
-  sendMessage(message: string) {
+  sendMessage(message: string, images?: Array<{ mediaType: string; data: string }>) {
     if (!this.alive) throw new Error('Process is dead');
     this.clearIdleTimer();
+
+    const content: Array<Record<string, unknown>> = [];
+    if (images && images.length > 0) {
+      for (const img of images) {
+        content.push({
+          type: 'image',
+          source: {
+            type: 'base64',
+            media_type: img.mediaType,
+            data: img.data,
+          },
+        });
+      }
+    }
+    content.push({ type: 'text', text: message });
 
     const userMsg = JSON.stringify({
       type: 'user',
       message: {
         role: 'user',
-        content: [{ type: 'text', text: message }],
+        content,
       },
     });
 
@@ -211,11 +226,14 @@ function getOrCreateProcess(
 /**
  * Send a message to an existing session. Reuses a persistent process if one exists.
  */
+export type ImageData = { mediaType: string; data: string };
+
 export async function streamMessage(
   sessionId: string,
   message: string,
   res: Response,
-  options: StreamOptions = {}
+  options: StreamOptions = {},
+  images?: ImageData[]
 ): Promise<void> {
   const projectPath = await findSessionProject(sessionId);
   if (!projectPath) {
@@ -223,7 +241,7 @@ export async function streamMessage(
   }
 
   const proc = getOrCreateProcess(sessionId, projectPath, options, sessionId);
-  pipeProcessToSSE(proc, message, res);
+  pipeProcessToSSE(proc, message, res, images);
 }
 
 /**
@@ -233,7 +251,8 @@ export async function streamNewSession(
   message: string,
   projectPath: string,
   res: Response,
-  options: StreamOptions = {}
+  options: StreamOptions = {},
+  images?: ImageData[]
 ): Promise<void> {
   // Use a temp key; will be replaced once we get the session ID from init
   const tempKey = `new-${Date.now()}`;
@@ -251,14 +270,14 @@ export async function streamNewSession(
   processPool.set(tempKey, proc);
   proc.on('close', () => processPool.delete(tempKey));
 
-  pipeProcessToSSE(proc, message, res);
+  pipeProcessToSSE(proc, message, res, images);
 }
 
 /**
  * Pipe a SessionProcess's events to an SSE response for a single turn.
  * After the result arrives, the SSE connection closes but the process stays alive.
  */
-function pipeProcessToSSE(proc: SessionProcess, message: string, res: Response) {
+function pipeProcessToSSE(proc: SessionProcess, message: string, res: Response, images?: ImageData[]) {
   res.writeHead(200, {
     'Content-Type': 'text/event-stream',
     'Cache-Control': 'no-cache',
@@ -324,7 +343,7 @@ function pipeProcessToSSE(proc: SessionProcess, message: string, res: Response) 
 
   // Send the message
   try {
-    proc.sendMessage(message);
+    proc.sendMessage(message, images);
   } catch (err) {
     sendEvent({ type: 'error', error: err instanceof Error ? err.message : 'Process is dead' });
     sendEvent({ type: 'done' });

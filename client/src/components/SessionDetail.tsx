@@ -4,10 +4,10 @@ import Markdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import rehypeHighlight from 'rehype-highlight';
 import 'highlight.js/styles/github-dark.min.css';
-import { ArrowLeft, GitFork, Copy, ChevronDown, ChevronRight, ArrowDown, Send, X } from 'lucide-react';
+import { ArrowLeft, GitFork, Copy, ChevronDown, ChevronRight, ArrowDown, Send, X, ImagePlus } from 'lucide-react';
 import { Button } from '@/components/shadcn/ui/button';
 import type { SessionStore } from '../stores/SessionStore';
-import type { ConversationMessage, ToolCallSummary } from '../types';
+import type { ConversationMessage, ToolCallSummary, ImageAttachment } from '../types';
 
 interface Props {
   store: SessionStore;
@@ -175,6 +175,13 @@ export const SessionDetail = observer(({ store }: Props) => {
                 <span className="text-xs font-bold text-zinc-300 uppercase tracking-wide">you</span>
                 <span className="text-xs text-zinc-500">just now</span>
               </div>
+              {store.pendingImages && store.pendingImages.length > 0 && (
+                <div className="flex gap-2 mb-2 flex-wrap">
+                  {store.pendingImages.map((img, i) => (
+                    <img key={i} src={`data:${img.mediaType};base64,${img.data}`} alt={`attachment ${i + 1}`} className="max-h-48 max-w-xs border border-border" />
+                  ))}
+                </div>
+              )}
               <div className="text-sm text-zinc-300">{store.pendingUserMessage}</div>
             </div>
           )}
@@ -215,7 +222,7 @@ export const SessionDetail = observer(({ store }: Props) => {
       </div>
 
       <MessageInput
-        onSend={(msg) => store.sendMessage(summary.sessionId, msg)}
+        onSend={(msg, images) => store.sendMessage(summary.sessionId, msg, images)}
         sending={store.sending}
         onCancel={() => store.cancelSend()}
       />
@@ -296,6 +303,15 @@ function MessageBubble({ message, messageIndex, totalMessages, onFork, forking, 
           {forking ? 'forking...' : confirmFork ? 'click to confirm fork' : 'fork from here'}
         </button>
       </div>
+
+      {/* images */}
+      {message.images && message.images.length > 0 && (
+        <div className="flex gap-2 mb-2 flex-wrap">
+          {message.images.map((img, i) => (
+            <img key={i} src={`data:${img.mediaType};base64,${img.data}`} alt={`attachment ${i + 1}`} className="max-h-48 max-w-xs border border-border" />
+          ))}
+        </div>
+      )}
 
       {/* content */}
       <div className="text-sm text-zinc-300">
@@ -460,20 +476,46 @@ function ToolCallFormatted({ input, toolName }: { input: Record<string, unknown>
 }
 
 interface MessageInputProps {
-  onSend: (message: string) => void;
+  onSend: (message: string, images?: ImageAttachment[]) => void;
   onCancel: () => void;
   sending: boolean;
 }
 
+const ACCEPTED_IMAGE_TYPES = ['image/png', 'image/jpeg', 'image/gif', 'image/webp'];
+
+function fileToImageAttachment(file: File): Promise<ImageAttachment> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = reader.result as string;
+      const base64 = result.split(',')[1];
+      resolve({ mediaType: file.type, data: base64 });
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
 function MessageInput({ onSend, onCancel, sending }: MessageInputProps) {
   const [text, setText] = useState('');
+  const [images, setImages] = useState<ImageAttachment[]>([]);
+  const [dragOver, setDragOver] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const addImages = useCallback(async (files: File[]) => {
+    const valid = files.filter(f => ACCEPTED_IMAGE_TYPES.includes(f.type));
+    if (valid.length === 0) return;
+    const attachments = await Promise.all(valid.map(fileToImageAttachment));
+    setImages(prev => [...prev, ...attachments]);
+  }, []);
 
   const handleSubmit = () => {
     const trimmed = text.trim();
-    if (!trimmed || sending) return;
-    onSend(trimmed);
+    if ((!trimmed && images.length === 0) || sending) return;
+    onSend(trimmed || '(image)', images.length > 0 ? images : undefined);
     setText('');
+    setImages([]);
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -486,29 +528,106 @@ function MessageInput({ onSend, onCancel, sending }: MessageInputProps) {
     }
   };
 
+  const handlePaste = useCallback(async (e: React.ClipboardEvent) => {
+    const items = Array.from(e.clipboardData.items);
+    const imageItems = items.filter(item => item.type.startsWith('image/'));
+    if (imageItems.length === 0) return;
+    e.preventDefault();
+    const files = imageItems.map(item => item.getAsFile()).filter(Boolean) as File[];
+    await addImages(files);
+  }, [addImages]);
+
+  const handleDrop = useCallback(async (e: React.DragEvent) => {
+    e.preventDefault();
+    setDragOver(false);
+    const files = Array.from(e.dataTransfer.files).filter(f => f.type.startsWith('image/'));
+    await addImages(files);
+  }, [addImages]);
+
+  const handleDragOver = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    setDragOver(true);
+  }, []);
+
+  const handleDragLeave = useCallback(() => {
+    setDragOver(false);
+  }, []);
+
+  const removeImage = (index: number) => {
+    setImages(prev => prev.filter((_, i) => i !== index));
+  };
+
   return (
-    <div className="p-3 border-t border-border flex gap-2">
-      <textarea
-        ref={textareaRef}
-        className="flex-1 bg-black/50 border border-input text-sm text-zinc-300 px-3 py-2 rounded-none resize-none focus:outline-none focus:ring-1 focus:ring-ring placeholder:text-zinc-600 font-[inherit]"
-        placeholder={sending ? 'claude is responding... (esc to cancel)' : 'send a message to this session... (enter to send)'}
-        value={text}
-        onChange={(e) => setText(e.target.value)}
-        onKeyDown={handleKeyDown}
-        disabled={sending}
-        rows={2}
-      />
-      {sending ? (
-        <Button variant="destructive" onClick={onCancel} className="self-end">
-          <X className="h-4 w-4 mr-1" />
-          cancel
-        </Button>
-      ) : (
-        <Button variant="outline" onClick={handleSubmit} disabled={!text.trim()} className="self-end">
-          <Send className="h-4 w-4 mr-1" />
-          send
-        </Button>
+    <div
+      className={`p-3 border-t border-border ${dragOver ? 'bg-zinc-800/50 border-zinc-500' : ''}`}
+      onDrop={handleDrop}
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+    >
+      {images.length > 0 && (
+        <div className="flex gap-2 mb-2 flex-wrap">
+          {images.map((img, i) => (
+            <div key={i} className="relative group">
+              <img
+                src={`data:${img.mediaType};base64,${img.data}`}
+                alt={`attachment ${i + 1}`}
+                className="h-16 w-16 object-cover border border-border"
+              />
+              <button
+                className="absolute -top-1.5 -right-1.5 h-4 w-4 bg-red-600 text-white flex items-center justify-center text-xs opacity-0 group-hover:opacity-100 transition-opacity"
+                onClick={() => removeImage(i)}
+              >
+                &times;
+              </button>
+            </div>
+          ))}
+        </div>
       )}
+      <div className="flex gap-2">
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/png,image/jpeg,image/gif,image/webp"
+          multiple
+          className="hidden"
+          onChange={async (e) => {
+            if (e.target.files) {
+              await addImages(Array.from(e.target.files));
+              e.target.value = '';
+            }
+          }}
+        />
+        <button
+          className="self-end p-2 text-zinc-500 hover:text-zinc-300 transition-colors border border-border hover:border-zinc-500"
+          onClick={() => fileInputRef.current?.click()}
+          disabled={sending}
+          title="Attach images"
+        >
+          <ImagePlus className="h-4 w-4" />
+        </button>
+        <textarea
+          ref={textareaRef}
+          className="flex-1 bg-black/50 border border-input text-sm text-zinc-300 px-3 py-2 rounded-none resize-none focus:outline-none focus:ring-1 focus:ring-ring placeholder:text-zinc-600 font-[inherit]"
+          placeholder={sending ? 'claude is responding... (esc to cancel)' : 'send a message... (paste/drop images, enter to send)'}
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          onKeyDown={handleKeyDown}
+          onPaste={handlePaste}
+          disabled={sending}
+          rows={2}
+        />
+        {sending ? (
+          <Button variant="destructive" onClick={onCancel} className="self-end">
+            <X className="h-4 w-4 mr-1" />
+            cancel
+          </Button>
+        ) : (
+          <Button variant="outline" onClick={handleSubmit} disabled={!text.trim() && images.length === 0} className="self-end">
+            <Send className="h-4 w-4 mr-1" />
+            send
+          </Button>
+        )}
+      </div>
     </div>
   );
 }

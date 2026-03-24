@@ -22,7 +22,7 @@ router.delete('/:id/process', (req, res) => {
 
 router.post('/new', async (req, res) => {
   try {
-    const { message, projectPath, dangerouslySkipPermissions } = req.body;
+    const { message, projectPath, dangerouslySkipPermissions, images } = req.body;
     if (!message || typeof message !== 'string') {
       res.status(400).json({ error: 'message is required' });
       return;
@@ -31,7 +31,7 @@ router.post('/new', async (req, res) => {
       res.status(400).json({ error: 'projectPath is required' });
       return;
     }
-    await streamNewSession(message, projectPath, res, { dangerouslySkipPermissions: !!dangerouslySkipPermissions });
+    await streamNewSession(message, projectPath, res, { dangerouslySkipPermissions: !!dangerouslySkipPermissions }, images);
   } catch (err) {
     console.error('Error creating new session:', err);
     const msg = err instanceof Error ? err.message : 'Failed to create session';
@@ -48,12 +48,12 @@ router.post('/:id/resume', (req, res) => {
 
 router.post('/:id/send', async (req, res) => {
   try {
-    const { message, dangerouslySkipPermissions } = req.body;
+    const { message, dangerouslySkipPermissions, images } = req.body;
     if (!message || typeof message !== 'string') {
       res.status(400).json({ error: 'message is required' });
       return;
     }
-    await streamMessage(req.params.id, message, res, { dangerouslySkipPermissions: !!dangerouslySkipPermissions });
+    await streamMessage(req.params.id, message, res, { dangerouslySkipPermissions: !!dangerouslySkipPermissions }, images);
   } catch (err) {
     console.error('Error sending message:', err);
     const msg = err instanceof Error ? err.message : 'Failed to send message';

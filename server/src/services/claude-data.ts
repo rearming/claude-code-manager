@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 import readline from 'node:readline';
-import type { SessionSummary, SessionDetail, ConversationMessage, ToolCallSummary } from '../types.js';
+import type { SessionSummary, SessionDetail, ConversationMessage, ToolCallSummary, ImageAttachment } from '../types.js';
 
 function getClaudeHome(): string {
   return path.join(os.homedir(), '.claude');
@@ -246,7 +246,20 @@ export async function getSessionDetail(sessionId: string): Promise<SessionDetail
               ? content.filter((c: any) => c.type === 'text').map((c: any) => c.text).join('\n')
               : '';
 
-          if (!text) continue;
+          // Extract image blocks
+          const imageBlocks: ImageAttachment[] = [];
+          if (Array.isArray(content)) {
+            for (const block of content) {
+              if (block.type === 'image' && block.source?.type === 'base64') {
+                imageBlocks.push({
+                  mediaType: block.source.media_type,
+                  data: block.source.data,
+                });
+              }
+            }
+          }
+
+          if (!text && imageBlocks.length === 0) continue;
 
           // Grab metadata from first real user message
           if (!summary.slug && entry.slug) summary.slug = entry.slug;
@@ -262,6 +275,7 @@ export async function getSessionDetail(sessionId: string): Promise<SessionDetail
             type: 'user',
             timestamp: entry.timestamp,
             content: text,
+            images: imageBlocks.length > 0 ? imageBlocks : undefined,
             isSidechain: entry.isSidechain || false,
           });
         } else if (entry.type === 'assistant') {
