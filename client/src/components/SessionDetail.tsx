@@ -257,6 +257,7 @@ export const SessionDetail = observer(({ store }: Props) => {
 
       <MessageInput
         ref={messageInputRef}
+        sessionId={summary.sessionId}
         onSend={(msg, images) => store.sendMessage(summary.sessionId, msg, images)}
         sending={store.sending}
         onCancel={() => store.cancelSend()}
@@ -619,7 +620,7 @@ function MessageBubble({ message, messageIndex, totalMessages, onFork, onInsertI
           {showTools && (
             <div className="mt-2 space-y-1">
               {message.toolCalls.map((tc, i) => (
-                <ToolCallView key={i} tool={tc} showDiff={showDiffs} />
+                <ToolCallView key={i} tool={tc} showDiff={showDiffs} forceExpand={showTools} />
               ))}
             </div>
           )}
@@ -628,21 +629,27 @@ function MessageBubble({ message, messageIndex, totalMessages, onFork, onInsertI
 
       {/* subagent tool calls */}
       {message.subagentToolCalls && message.subagentToolCalls.length > 0 && (
-        <SubagentToolCallsView toolCalls={message.subagentToolCalls} />
+        <SubagentToolCallsView toolCalls={message.subagentToolCalls} forceExpand={showTools} />
       )}
     </div>
   );
 }
 
-function SubagentToolCallsView({ toolCalls }: { toolCalls: ToolCallSummary[] }) {
-  const [expanded, setExpanded] = useState(false);
+function SubagentToolCallsView({ toolCalls, forceExpand }: { toolCalls: ToolCallSummary[]; forceExpand: boolean }) {
+  const [localExpand, setLocalExpand] = useState<boolean | null>(null);
+  const prevForceRef = useRef(forceExpand);
+  if (prevForceRef.current !== forceExpand) {
+    prevForceRef.current = forceExpand;
+    if (localExpand !== null) setLocalExpand(null);
+  }
+  const expanded = localExpand !== null ? localExpand : forceExpand;
   return (
     <div className="mt-2 border-t border-zinc-800 pt-2">
       <button
         className={`text-xs flex items-center gap-1 px-2 py-0.5 border transition-colors ${
           expanded ? 'border-zinc-600 text-zinc-300 bg-zinc-800' : 'border-border text-zinc-500 hover:text-zinc-300'
         }`}
-        onClick={() => setExpanded(!expanded)}
+        onClick={() => setLocalExpand(localExpand === null ? !forceExpand : !localExpand)}
       >
         {expanded ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
         {toolCalls.length} subagent tool call{toolCalls.length > 1 ? 's' : ''}
@@ -650,7 +657,7 @@ function SubagentToolCallsView({ toolCalls }: { toolCalls: ToolCallSummary[] }) 
       {expanded ? (
         <div className="mt-2 space-y-1 ml-3 border-l-2 border-zinc-800 pl-2">
           {toolCalls.map((tc, i) => (
-            <ToolCallView key={i} tool={tc} showDiff={false} />
+            <ToolCallView key={i} tool={tc} showDiff={false} forceExpand={forceExpand} />
           ))}
         </div>
       ) : (
@@ -690,17 +697,23 @@ function getToolSummary(tool: ToolCallSummary): string {
   return typeof firstStr === 'string' ? firstStr.slice(0, 120) : '';
 }
 
-function ToolCallView({ tool, showDiff }: { tool: ToolCallSummary; showDiff: boolean }) {
+function ToolCallView({ tool, showDiff, forceExpand }: { tool: ToolCallSummary; showDiff: boolean; forceExpand?: boolean }) {
   const isEditTool = tool.name === 'Edit' || tool.name === 'MultiEdit';
   const isWriteTool = tool.name === 'Write';
   const filePath = tool.input.file_path as string | undefined;
-  const [expanded, setExpanded] = useState(false);
+  const [localExpand, setLocalExpand] = useState<boolean | null>(null);
+  const prevForceRef = useRef(forceExpand);
+  if (prevForceRef.current !== forceExpand) {
+    prevForceRef.current = forceExpand;
+    if (localExpand !== null) setLocalExpand(null);
+  }
+  const expanded = localExpand !== null ? localExpand : (forceExpand ?? false);
 
   return (
     <div className="border border-zinc-800 bg-black/30">
       <div
         className="flex items-center gap-2 px-3 py-1.5 cursor-pointer hover:bg-zinc-900 transition-colors"
-        onClick={() => setExpanded(!expanded)}
+        onClick={() => setLocalExpand(localExpand === null ? !(forceExpand ?? false) : !localExpand)}
       >
         {expanded ? <ChevronDown className="h-3 w-3 text-zinc-500" /> : <ChevronRight className="h-3 w-3 text-zinc-500" />}
         <span className="text-xs font-medium text-zinc-400">{tool.name}</span>
@@ -776,6 +789,7 @@ interface MessageInputProps {
   onSend: (message: string, images?: ImageAttachment[]) => void;
   onCancel: () => void;
   sending: boolean;
+  sessionId: string;
 }
 
 const ACCEPTED_IMAGE_TYPES = ['image/png', 'image/jpeg', 'image/gif', 'image/webp'];
@@ -793,9 +807,27 @@ function fileToImageAttachment(file: File): Promise<ImageAttachment> {
   });
 }
 
-const MessageInput = forwardRef<MessageInputHandle, MessageInputProps>(function MessageInput({ onSend, onCancel, sending }, ref) {
-  const [text, setText] = useState('');
+const DRAFT_CACHE_KEY = 'ccm-chat-drafts';
+
+function getDraftCache(): Record<string, string> {
+  try { return JSON.parse(localStorage.getItem(DRAFT_CACHE_KEY) || '{}'); } catch { return {}; }
+}
+
+function setDraftCache(sessionId: string, text: string) {
+  const cache = getDraftCache();
+  if (text) { cache[sessionId] = text; } else { delete cache[sessionId]; }
+  localStorage.setItem(DRAFT_CACHE_KEY, JSON.stringify(cache));
+}
+
+const MessageInput = forwardRef<MessageInputHandle, MessageInputProps>(function MessageInput({ onSend, onCancel, sending, sessionId }, ref) {
+  const [text, setText] = useState(() => getDraftCache()[sessionId] || '');
   const [images, setImages] = useState<ImageAttachment[]>([]);
+  const prevSessionIdRef = useRef(sessionId);
+  if (prevSessionIdRef.current !== sessionId) {
+    prevSessionIdRef.current = sessionId;
+    setText(getDraftCache()[sessionId] || '');
+    setImages([]);
+  }
   const [dragOver, setDragOver] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -818,6 +850,7 @@ const MessageInput = forwardRef<MessageInputHandle, MessageInputProps>(function 
     if ((!trimmed && images.length === 0) || sending) return;
     onSend(trimmed || '(image)', images.length > 0 ? images : undefined);
     setText('');
+    setDraftCache(sessionId, '');
     setImages([]);
   };
 
@@ -913,7 +946,7 @@ const MessageInput = forwardRef<MessageInputHandle, MessageInputProps>(function 
           className="flex-1 bg-black/50 border border-input text-sm text-zinc-300 px-3 py-2 rounded-none resize-none focus:outline-none focus:ring-1 focus:ring-ring placeholder:text-zinc-600 font-[inherit]"
           placeholder={sending ? 'claude is responding... (esc to cancel)' : 'send a message... (paste/drop images, enter to send)'}
           value={text}
-          onChange={(e) => setText(e.target.value)}
+          onChange={(e) => { setText(e.target.value); setDraftCache(sessionId, e.target.value); }}
           onKeyDown={handleKeyDown}
           onPaste={handlePaste}
           disabled={sending}

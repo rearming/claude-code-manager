@@ -18,8 +18,17 @@ interface Props {
 }
 
 export const NewSessionDialog = observer(({ store }: Props) => {
-  const [message, setMessage] = useState('');
-  const [projectPath, setProjectPath] = useState('');
+  const [message, setMessage] = useState(() => localStorage.getItem('ccm-new-session-message') || '');
+  const [projectPath, setProjectPath] = useState(() => localStorage.getItem('ccm-last-project-dir') || '');
+
+  const updateMessage = (val: string) => {
+    setMessage(val);
+    localStorage.setItem('ccm-new-session-message', val);
+  };
+  const updateProjectPath = (val: string) => {
+    setProjectPath(val);
+    localStorage.setItem('ccm-last-project-dir', val);
+  };
   const [showBrowser, setShowBrowser] = useState(false);
   const [browseData, setBrowseData] = useState<BrowseResult | null>(null);
   const [browseLoading, setBrowseLoading] = useState(false);
@@ -33,6 +42,7 @@ export const NewSessionDialog = observer(({ store }: Props) => {
     const trimmedMsg = message.trim();
     const trimmedPath = projectPath.trim();
     if (!trimmedMsg || !trimmedPath) return;
+    localStorage.removeItem('ccm-new-session-message');
     store.startNewSession(trimmedMsg, trimmedPath);
   };
 
@@ -78,7 +88,7 @@ export const NewSessionDialog = observer(({ store }: Props) => {
   };
 
   const selectDir = (dirPath: string) => {
-    setProjectPath(dirPath);
+    updateProjectPath(dirPath);
     setShowBrowser(false);
   };
 
@@ -100,7 +110,7 @@ export const NewSessionDialog = observer(({ store }: Props) => {
           {projectPaths.length > 0 && (
             <Select
               value={projectPath || '__none__'}
-              onValueChange={(val) => setProjectPath(val === '__none__' ? '' : val)}
+              onValueChange={(val) => updateProjectPath(val === '__none__' ? '' : val)}
             >
               <SelectTrigger className="w-full h-8 bg-black/50 text-sm text-zinc-300">
                 <SelectValue placeholder="select a project..." />
@@ -118,7 +128,7 @@ export const NewSessionDialog = observer(({ store }: Props) => {
               type="text"
               placeholder={projectPaths.length > 0 ? 'or type a custom path...' : '/path/to/project'}
               value={projectPath}
-              onChange={(e) => setProjectPath(e.target.value)}
+              onChange={(e) => updateProjectPath(e.target.value)}
               onKeyDown={handleKeyDown}
               className="bg-black/50"
             />
@@ -179,7 +189,7 @@ export const NewSessionDialog = observer(({ store }: Props) => {
             className="w-full bg-black/50 border border-input text-sm text-zinc-300 px-3 py-2 rounded-none resize-none focus:outline-none focus:ring-1 focus:ring-ring placeholder:text-zinc-600 font-[inherit]"
             placeholder="what would you like to work on?"
             value={message}
-            onChange={(e) => setMessage(e.target.value)}
+            onChange={(e) => updateMessage(e.target.value)}
             onKeyDown={handleKeyDown}
             rows={3}
           />
