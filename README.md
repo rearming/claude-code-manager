@@ -2,6 +2,8 @@
 
 A web-based session browser for [Claude Code](https://docs.anthropic.com/en/docs/claude-code) conversations. Browse, search, and fork sessions stored in your local `~/.claude/` directory.
 
+![Claude Code Manager](docs/ccmanager.png)
+
 ## Features
 
 - **Browse sessions** — View all Claude Code conversations across projects
