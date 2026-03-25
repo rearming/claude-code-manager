@@ -9,8 +9,112 @@ function getClaudeHome(): string {
 }
 
 function projectDirToName(dirName: string): string {
-  // Convert encoded dir names like "X--Projects-claude-code-manager" back to paths
-  return dirName.replace(/^([A-Z])-/, '$1:').replaceAll('-', path.sep);
+  // Convert encoded dir names like "-Users-inkpaper-projects-claude-code-manager" back to paths.
+  // Claude CLI encodes paths by replacing '/', '\', ':', '_' and '.' with '-'.
+  // We resolve the ambiguity by backtracking with filesystem existence checks.
+  // For paths that no longer exist, we resolve as far as possible then apply
+  // naive splitting for the remainder.
+  const naive = dirName.replace(/^([A-Z])-/, '$1:').replaceAll('-', path.sep);
+
+  const withDrive = dirName.replace(/^([A-Z])-/, '$1:');
+  const parts = withDrive.split('-');
+  if (parts.length <= 1) return naive;
+
+  // Track the best partial resolution (longest validated prefix)
+  let bestPrefix = '';
+  let bestPrefixIdx = -1;
+
+  // At each '-' boundary, try: path separator, underscore, dot-prefix, or literal hyphen.
+  // Prune the search by verifying directory existence at '/' boundaries.
+  function resolve(idx: number, builtPath: string): string | null {
+    if (idx >= parts.length) {
+      try { if (fs.existsSync(builtPath)) return builtPath; } catch {}
+      return null;
+    }
+
+    const part = parts[idx];
+
+    // Handle empty part from '--' (encodes '/.' — dot-prefixed dirs like .claude)
+    // Merge the dot with the next part: '' + 'claude' → '.claude'
+    if (part === '') {
+      try {
+        if (fs.statSync(builtPath).isDirectory()) {
+          if (builtPath.length > bestPrefix.length) {
+            bestPrefix = builtPath;
+            bestPrefixIdx = idx;
+          }
+          if (idx + 1 < parts.length) {
+            const dotPart = '.' + parts[idx + 1];
+            const r = resolve(idx + 2, builtPath + path.sep + dotPart);
+            if (r) return r;
+          }
+        }
+      } catch {}
+      return null;
+    }
+
+    // Option 1: '-' is a path separator
+    try {
+      if (fs.statSync(builtPath).isDirectory()) {
+        if (builtPath.length > bestPrefix.length) {
+          bestPrefix = builtPath;
+          bestPrefixIdx = idx;
+        }
+        const r = resolve(idx + 1, builtPath + path.sep + part);
+        if (r) return r;
+      }
+    } catch {}
+
+    // Option 2: '-' was originally '_'
+    const r2 = resolve(idx + 1, builtPath + '_' + part);
+    if (r2) return r2;
+
+    // Option 3: '-' is a literal hyphen
+    const r3 = resolve(idx + 1, builtPath + '-' + part);
+    if (r3) return r3;
+
+    return null;
+  }
+
+  function tryResolve(root: string): string | null {
+    bestPrefix = '';
+    bestPrefixIdx = -1;
+    const full = resolve(2, root);
+    if (full) return full;
+
+    // If we found a valid prefix, apply naive splitting for the remainder
+    if (bestPrefix && bestPrefixIdx > 1) {
+      const remaining = parts.slice(bestPrefixIdx);
+      // Restore '--X' as '/.X' and other '-' as '/'
+      let tail = '';
+      for (let i = 0; i < remaining.length; i++) {
+        if (remaining[i] === '' && i + 1 < remaining.length) {
+          tail += path.sep + '.' + remaining[i + 1];
+          i++; // skip next part, already consumed
+        } else {
+          tail += path.sep + remaining[i];
+        }
+      }
+      return bestPrefix + tail;
+    }
+    return null;
+  }
+
+  // parts[0] is '' for Unix paths (leading '-' preserved) or 'C:' for Windows.
+  if (parts.length >= 2) {
+    const root = parts[0] + path.sep + parts[1];
+    const resolved = tryResolve(root);
+    if (resolved) return resolved;
+
+    // If root doesn't start with '/' and we're on Unix, try with absolute path
+    // (the leading '-' may have been stripped by the encoder)
+    if (parts[0] !== '' && path.sep === '/') {
+      const absResolved = tryResolve(path.sep + root);
+      if (absResolved) return absResolved;
+    }
+  }
+
+  return naive;
 }
 
 function projectPathToDir(projectPath: string): string {

@@ -1,5 +1,5 @@
 import { makeAutoObservable, runInAction } from 'mobx';
-import type { SessionSummary, SessionDetail, ForkResult, ImageAttachment } from '../types';
+import type { SessionSummary, SessionDetail, ForkResult, ImageAttachment, ConversationMessage, ToolCallSummary } from '../types';
 import { fetchSessions, fetchSessionDetail, resumeSession, forkSessionAt, streamMessageToSession, streamNewSession, fetchSessionStatus, subscribeToSession } from '../api';
 
 const SETTINGS_KEY = 'ccm-settings';
@@ -112,6 +112,8 @@ export class SessionStore {
   rawLines: string[] = loadRawLines();
   streamingToolCalls: StreamingToolCall[] = [];
   streamingBlocks: StreamingBlock[] = [];
+  /** Completed assistant turns committed during multi-turn streaming */
+  committedStreamingMessages: ConversationMessage[] = [];
   terminalInput: string = loadTerminalInput();
   lastRawEventTime: number = 0;
   settings: Settings = loadSettings();
@@ -120,6 +122,24 @@ export class SessionStore {
 
   constructor() {
     makeAutoObservable(this);
+  }
+
+  /** Which session is currently streaming (null if none) */
+  get streamingSessionId(): string | null {
+    if (!this.sending) return null;
+    return this.selectedSessionId || this.newSessionId;
+  }
+
+  /** Reconnection status for UX feedback */
+  reconnectedSessionId: string | null = null;
+  private _reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+
+  private showReconnectionBanner(sessionId: string) {
+    this.reconnectedSessionId = sessionId;
+    if (this._reconnectTimer) clearTimeout(this._reconnectTimer);
+    this._reconnectTimer = setTimeout(() => {
+      this.reconnectedSessionId = null;
+    }, 5000);
   }
 
   toggleSettings() {
@@ -252,38 +272,49 @@ export class SessionStore {
       }
     }
 
-    // assistant event: fallback for when assistant events arrive on stdout
+    // assistant event: a complete assistant turn has arrived.
+    // Commit it as a proper message and reset streaming state for the next turn.
     if (event.type === 'assistant') {
-      const msg = event.message as { content?: Array<{ type: string; id?: string; name?: string; input?: Record<string, unknown>; text?: string }> } | undefined;
+      const msg = event.message as {
+        content?: Array<{ type: string; id?: string; name?: string; input?: Record<string, unknown>; text?: string }>;
+        model?: string;
+      } | undefined;
       if (msg?.content && Array.isArray(msg.content)) {
+        const textParts: string[] = [];
+        const toolCalls: ToolCallSummary[] = [];
+
         for (const block of msg.content) {
+          if (block.type === 'text' && block.text) {
+            textParts.push(block.text);
+          }
           if (block.type === 'tool_use' && block.name) {
-            const existing = block.id ? this.streamingToolCalls.find(tc => tc.id === block.id) : undefined;
-            if (existing) {
-              if (block.input && Object.keys(block.input).length > 0) {
-                existing.input = block.input;
-              }
-            } else {
-              this.streamingToolCalls.push({
-                id: block.id,
-                name: block.name,
-                input: block.input || {},
-                status: 'running',
-              });
-              // Also add to blocks if not already there
-              const existsInBlocks = block.id && this.streamingBlocks.some(b => b.type === 'tool_use' && b.id === block.id);
-              if (!existsInBlocks) {
-                this.streamingBlocks.push({
-                  type: 'tool_use',
-                  id: block.id,
-                  name: block.name,
-                  input: block.input || {},
-                  status: 'running',
-                });
-              }
-            }
+            toolCalls.push({
+              name: block.name,
+              input: typeof block.input === 'string'
+                ? { raw: block.input }
+                : (block.input || {}),
+            });
           }
         }
+
+        const text = textParts.join('\n');
+        if (text || toolCalls.length > 0) {
+          this.committedStreamingMessages.push({
+            uuid: (event.uuid as string) || `streaming-${Date.now()}-${this.committedStreamingMessages.length}`,
+            parentUuid: (event.parentUuid as string) || null,
+            type: 'assistant',
+            timestamp: (event.timestamp as string) || new Date().toISOString(),
+            content: text,
+            model: msg.model,
+            toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
+            isSidechain: false,
+          });
+        }
+
+        // Clear streaming state so the next turn starts fresh
+        this.streamingText = '';
+        this.streamingBlocks = [];
+        this.streamingToolCalls = [];
       }
     }
 
@@ -366,7 +397,7 @@ export class SessionStore {
   }
 
   get projects(): string[] {
-    const projectSet = new Set(this.sessions.map((s) => s.projectName));
+    const projectSet = new Set(this.sessions.map((s) => s.project));
     return Array.from(projectSet).sort();
   }
 
@@ -374,7 +405,7 @@ export class SessionStore {
     let result = this.sessions;
 
     if (this.projectFilter) {
-      result = result.filter((s) => s.projectName === this.projectFilter);
+      result = result.filter((s) => s.project === this.projectFilter);
     }
 
     if (this.searchQuery) {
@@ -395,7 +426,7 @@ export class SessionStore {
         result = [...result].sort((a, b) => b.messageCount - a.messageCount);
         break;
       case 'project':
-        result = [...result].sort((a, b) => a.projectName.localeCompare(b.projectName));
+        result = [...result].sort((a, b) => a.project.localeCompare(b.project));
         break;
     }
 
@@ -458,6 +489,7 @@ export class SessionStore {
     this.resumeCommand = null;
     this.streamingText = '';
     this.streamingBlocks = [];
+    this.committedStreamingMessages = [];
     try {
       const detail = await fetchSessionDetail(sessionId);
       runInAction(() => {
@@ -513,6 +545,7 @@ export class SessionStore {
           this.selectedDetail = detail;
           this.streamingText = '';
           this.streamingBlocks = [];
+          this.committedStreamingMessages = [];
           this.detailLoading = false;
         });
         return;
@@ -526,6 +559,7 @@ export class SessionStore {
           this.error = e instanceof Error ? e.message : 'Unknown error';
           this.streamingText = '';
           this.streamingBlocks = [];
+          this.committedStreamingMessages = [];
           this.detailLoading = false;
         });
         return;
@@ -594,6 +628,7 @@ export class SessionStore {
     this.clearRawLines();
     this.streamingToolCalls = [];
     this.streamingBlocks = [];
+    this.committedStreamingMessages = [];
     const abort = streamNewSession(message, projectPath, this.settings.dangerouslySkipPermissions, {
       images: images,
       onInit: (data) => {
@@ -613,7 +648,7 @@ export class SessionStore {
       },
       onResult: (data) => {
         runInAction(() => {
-          if (data.result) {
+          if (data.result && this.committedStreamingMessages.length === 0) {
             this.streamingText = data.result;
           }
         });
@@ -655,6 +690,7 @@ export class SessionStore {
     this.clearRawLines();
     this.streamingToolCalls = [];
     this.streamingBlocks = [];
+    this.committedStreamingMessages = [];
 
     const abort = streamMessageToSession(sessionId, message, this.settings.dangerouslySkipPermissions, {
       images: images,
@@ -670,8 +706,9 @@ export class SessionStore {
       },
       onResult: (data) => {
         runInAction(() => {
-          // Use the full result text to ensure nothing is missed
-          if (data.result) {
+          // Use the full result text to ensure nothing is missed,
+          // but only if we haven't committed turns (otherwise the text is already committed)
+          if (data.result && this.committedStreamingMessages.length === 0) {
             this.streamingText = data.result;
           }
         });
@@ -691,7 +728,7 @@ export class SessionStore {
           this.pendingImages = null;
           this.abortStream = null;
           this.scrollToBottomOnLoad = true;
-          // Keep streamingText visible until reload completes;
+          // Keep streamingText/committedMessages visible until reload completes;
           // retry if JSONL hasn't been flushed yet
           this.reloadSession(sessionId, true);
         });
@@ -709,6 +746,7 @@ export class SessionStore {
       this.streamingText = '';
       this.streamingToolCalls = [];
       this.streamingBlocks = [];
+      this.committedStreamingMessages = [];
     }
   }
 
@@ -726,7 +764,9 @@ export class SessionStore {
         this.streamingText = '';
         this.streamingToolCalls = [];
         this.streamingBlocks = [];
+        this.committedStreamingMessages = [];
         this.clearRawLines();
+        this.showReconnectionBanner(sessionId);
       });
 
       const abort = subscribeToSession(sessionId, {
@@ -742,7 +782,7 @@ export class SessionStore {
         },
         onResult: (data) => {
           runInAction(() => {
-            if (data.result) {
+            if (data.result && this.committedStreamingMessages.length === 0) {
               this.streamingText = data.result;
             }
           });

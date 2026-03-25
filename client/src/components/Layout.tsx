@@ -337,6 +337,34 @@ const NewSessionStreamingView = observer(({ store }: { store: SessionStore }) =>
           <div className="text-sm text-zinc-300">{store.pendingUserMessage}</div>
         </div>
       )}
+
+      {/* Committed messages from completed turns */}
+      {store.committedStreamingMessages.map((msg) => (
+        <div key={msg.uuid} className="p-4 border border-border bg-assistant-bg mb-3">
+          <div className="flex items-center gap-2 mb-2">
+            <span className="text-xs font-bold text-zinc-300 uppercase tracking-wide">claude</span>
+            {msg.model && <span className="text-xs text-zinc-500">{msg.model}</span>}
+          </div>
+          {msg.content && (
+            <div className="text-sm text-zinc-300 markdown-body">
+              <Markdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeHighlight]}>
+                {msg.content}
+              </Markdown>
+            </div>
+          )}
+          {msg.toolCalls && msg.toolCalls.length > 0 && (
+            <div className="flex flex-wrap gap-1.5 mt-2">
+              {msg.toolCalls.map((tc, i) => (
+                <span key={i} className="inline-flex items-center gap-1.5 text-xs border border-zinc-700 bg-black/30 text-zinc-500 px-2 py-1">
+                  <span className="font-medium">{tc.name}</span>
+                </span>
+              ))}
+            </div>
+          )}
+        </div>
+      ))}
+
+      {/* Current streaming turn */}
       {store.streamingText ? (
         <div className="p-4 border border-border bg-assistant-bg">
           <div className="flex items-center gap-2 mb-2">
@@ -349,7 +377,7 @@ const NewSessionStreamingView = observer(({ store }: { store: SessionStore }) =>
             </Markdown>
           </div>
         </div>
-      ) : store.streamingToolCalls.length === 0 ? (
+      ) : store.streamingToolCalls.length === 0 && store.committedStreamingMessages.length === 0 ? (
         <div className="p-4 border border-border bg-assistant-bg">
           <div className="flex items-center gap-2 mb-2">
             <span className="text-xs font-bold text-zinc-300 uppercase tracking-wide">claude</span>

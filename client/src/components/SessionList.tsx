@@ -1,6 +1,7 @@
 import { observer } from 'mobx-react-lite';
 import type { SessionStore } from '../stores/SessionStore';
 import { SessionCard } from './SessionCard';
+import type { SessionStatus } from './SessionCard';
 
 interface Props {
   store: SessionStore;
@@ -20,6 +21,12 @@ export const SessionList = observer(({ store }: Props) => {
   }
 
   const grouped = store.groupedSessions;
+  const streamingSid = store.streamingSessionId;
+
+  const getStatus = (sessionId: string): SessionStatus => {
+    if (sessionId === streamingSid) return 'streaming';
+    return null;
+  };
 
   return (
     <div className="flex-1 overflow-y-auto">
@@ -33,6 +40,7 @@ export const SessionList = observer(({ store }: Props) => {
               key={session.sessionId}
               session={session}
               isSelected={store.selectedSessionId === session.sessionId}
+              status={getStatus(session.sessionId)}
               onClick={() => store.selectSession(session.sessionId)}
             />
           ))}

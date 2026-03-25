@@ -38,7 +38,7 @@ export const SearchBar = observer(({ store }: Props) => {
           <SelectItem value="__all__">all projects</SelectItem>
           {store.projects.map((p) => (
             <SelectItem key={p} value={p}>
-              {p.replace(/-/g, ' ').replace(/^-*Users-\w+-/, '')}
+              {p}
             </SelectItem>
           ))}
         </SelectContent>

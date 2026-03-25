@@ -80,7 +80,7 @@ export const SessionDetail = observer(({ store }: Props) => {
     if (el && isNearBottom()) {
       el.scrollTop = el.scrollHeight;
     }
-  }, [store.streamingText, store.streamingToolCalls.length, store.streamingBlocks.length, store.sending, store.settings.autoScrollOnNewMessages, isNearBottom]);
+  }, [store.streamingText, store.streamingToolCalls.length, store.streamingBlocks.length, store.committedStreamingMessages.length, store.sending, store.settings.autoScrollOnNewMessages, isNearBottom]);
 
   useEffect(() => {
     if (store.pendingUserMessage && store.settings.autoScrollOnNewMessages) {
@@ -171,6 +171,14 @@ export const SessionDetail = observer(({ store }: Props) => {
         </div>
       )}
 
+      {/* reconnection banner */}
+      {store.reconnectedSessionId === summary.sessionId && (
+        <div className="px-5 py-2 bg-green-900/20 border-b border-green-800/50 flex items-center gap-2">
+          <span className="h-2 w-2 rounded-full bg-green-500 animate-pulse" />
+          <span className="text-xs text-green-400">reconnected to active stream</span>
+        </div>
+      )}
+
       {/* messages */}
       <div className="flex-1 relative overflow-hidden">
         <div className="h-full overflow-y-auto p-4 space-y-3" ref={containerRef} onScroll={handleScroll}>
@@ -205,6 +213,22 @@ export const SessionDetail = observer(({ store }: Props) => {
             </div>
           )}
 
+          {/* Committed messages from completed turns during multi-turn streaming */}
+          {store.committedStreamingMessages.map((msg, index) => (
+            <MessageBubble
+              key={msg.uuid}
+              message={msg}
+              messageIndex={messages.length + index}
+              totalMessages={messages.length + store.committedStreamingMessages.length}
+              onFork={handleFork}
+              onInsertImage={handleInsertImage}
+              forking={store.forking}
+              globalExpand={store.settings.globalExpandTools}
+              globalDiffs={store.settings.globalShowDiffs}
+            />
+          ))}
+
+          {/* Current streaming turn (in-progress) */}
           {store.streamingBlocks.length > 0 ? (
             <StreamingBlocksView blocks={store.streamingBlocks} sending={store.sending} />
           ) : store.streamingText ? (
@@ -225,9 +249,13 @@ export const SessionDetail = observer(({ store }: Props) => {
             <div className="p-4 border border-border bg-assistant-bg mr-6">
               <div className="flex items-center gap-2 mb-2">
                 <span className="text-xs font-bold text-zinc-300 uppercase tracking-wide">claude</span>
-                <span className="text-xs text-zinc-500 animate-pulse">thinking...</span>
+                <span className="text-xs text-zinc-500 animate-pulse">
+                  {store.committedStreamingMessages.length > 0 ? 'working...' : 'thinking...'}
+                </span>
               </div>
-              <div className="text-sm text-zinc-500">waiting for response...</div>
+              {store.committedStreamingMessages.length === 0 && (
+                <div className="text-sm text-zinc-500">waiting for response...</div>
+              )}
             </div>
           )}
 
