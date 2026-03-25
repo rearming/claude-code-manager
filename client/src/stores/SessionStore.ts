@@ -480,23 +480,56 @@ export class SessionStore {
    * Reload a session without clearing streamingText until the data arrives.
    * This prevents the UI from going blank between stream end and data load.
    */
-  async reloadSession(sessionId: string) {
+  /**
+   * Reload session detail from the JSONL file.
+   * When retryForNewMessages is true, retries if the JSONL hasn't been updated
+   * yet (race condition: Claude CLI may not have flushed writes when the
+   * stream-json result event fires).
+   */
+  async reloadSession(sessionId: string, retryForNewMessages = false) {
     this.selectedSessionId = sessionId;
-    try {
-      const detail = await fetchSessionDetail(sessionId);
-      runInAction(() => {
-        this.selectedDetail = detail;
-        this.streamingText = '';
-        this.streamingBlocks = [];
-        this.detailLoading = false;
-      });
-    } catch (e) {
-      runInAction(() => {
-        this.error = e instanceof Error ? e.message : 'Unknown error';
-        this.streamingText = '';
-        this.streamingBlocks = [];
-        this.detailLoading = false;
-      });
+    const previousCount = this.selectedDetail?.messages?.length || 0;
+
+    const MAX_ATTEMPTS = retryForNewMessages ? 6 : 1;
+    const INITIAL_DELAY = 400;
+    const RETRY_DELAY = 800;
+
+    if (retryForNewMessages) {
+      // Wait a bit for Claude CLI to flush JSONL writes
+      await new Promise(resolve => setTimeout(resolve, INITIAL_DELAY));
+    }
+
+    for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
+      try {
+        const detail = await fetchSessionDetail(sessionId);
+
+        // If we expect new messages and the JSONL hasn't caught up, retry
+        if (retryForNewMessages && attempt < MAX_ATTEMPTS - 1 && detail.messages.length <= previousCount) {
+          await new Promise(resolve => setTimeout(resolve, RETRY_DELAY));
+          continue;
+        }
+
+        runInAction(() => {
+          this.selectedDetail = detail;
+          this.streamingText = '';
+          this.streamingBlocks = [];
+          this.detailLoading = false;
+        });
+        return;
+      } catch (e) {
+        // For retry mode, keep trying on errors too (JSONL might not exist yet for new sessions)
+        if (retryForNewMessages && attempt < MAX_ATTEMPTS - 1) {
+          await new Promise(resolve => setTimeout(resolve, RETRY_DELAY));
+          continue;
+        }
+        runInAction(() => {
+          this.error = e instanceof Error ? e.message : 'Unknown error';
+          this.streamingText = '';
+          this.streamingBlocks = [];
+          this.detailLoading = false;
+        });
+        return;
+      }
     }
   }
 
@@ -604,7 +637,7 @@ export class SessionStore {
           this.loadSessions();
           if (sid) {
             this.scrollToBottomOnLoad = true;
-            this.reloadSession(sid);
+            this.reloadSession(sid, true);
           }
         });
       },
@@ -658,8 +691,9 @@ export class SessionStore {
           this.pendingImages = null;
           this.abortStream = null;
           this.scrollToBottomOnLoad = true;
-          // Keep streamingText visible until reload completes
-          this.reloadSession(sessionId);
+          // Keep streamingText visible until reload completes;
+          // retry if JSONL hasn't been flushed yet
+          this.reloadSession(sessionId, true);
         });
       },
     });
@@ -724,7 +758,7 @@ export class SessionStore {
             this.sending = false;
             this.abortStream = null;
             this.scrollToBottomOnLoad = true;
-            this.reloadSession(sessionId);
+            this.reloadSession(sessionId, true);
           });
         },
       });
