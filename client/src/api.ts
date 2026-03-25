@@ -16,6 +16,17 @@ export async function browseDirectory(dirPath?: string): Promise<BrowseResult> {
   return res.json();
 }
 
+export async function pickDirectory(startPath?: string): Promise<string | null> {
+  const res = await fetch(`${BASE}/pick-directory`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ startPath }),
+  });
+  if (!res.ok) throw new Error('Failed to open directory picker');
+  const data = await res.json();
+  return data.path ?? null;
+}
+
 export async function fetchSessions(params?: {
   project?: string;
   search?: string;

@@ -13,7 +13,7 @@ import {
 import { ChatInput } from './ChatInput';
 import type { SessionStore } from '../stores/SessionStore';
 import type { ImageAttachment } from '../types';
-import { browseDirectory, type BrowseResult } from '../api';
+import { pickDirectory } from '../api';
 
 interface Props {
   store: SessionStore;
@@ -22,6 +22,7 @@ interface Props {
 export const NewSessionDialog = observer(({ store }: Props) => {
   const [message, setMessage] = useState(() => localStorage.getItem('ccm-new-session-message') || '');
   const [projectPath, setProjectPath] = useState(() => localStorage.getItem('ccm-last-project-dir') || '');
+  const [picking, setPicking] = useState(false);
 
   const updateMessage = (val: string) => {
     setMessage(val);
@@ -31,10 +32,6 @@ export const NewSessionDialog = observer(({ store }: Props) => {
     setProjectPath(val);
     localStorage.setItem('ccm-last-project-dir', val);
   };
-  const [showBrowser, setShowBrowser] = useState(false);
-  const [browseData, setBrowseData] = useState<BrowseResult | null>(null);
-  const [browseLoading, setBrowseLoading] = useState(false);
-  const [browseError, setBrowseError] = useState<string | null>(null);
 
   if (!store.showNewSession) return null;
 
@@ -50,44 +47,22 @@ export const NewSessionDialog = observer(({ store }: Props) => {
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Escape') {
-      if (showBrowser) {
-        setShowBrowser(false);
-      } else {
-        store.closeNewSession();
+      store.closeNewSession();
+    }
+  };
+
+  const handlePickDirectory = async () => {
+    setPicking(true);
+    try {
+      const selected = await pickDirectory(projectPath || undefined);
+      if (selected) {
+        updateProjectPath(selected);
       }
-    }
-  };
-
-  const openBrowser = async (startPath?: string) => {
-    setShowBrowser(true);
-    setBrowseLoading(true);
-    setBrowseError(null);
-    try {
-      const data = await browseDirectory(startPath || projectPath || undefined);
-      setBrowseData(data);
     } catch {
-      setBrowseError('failed to browse directory');
+      // silently ignore - user may have cancelled or picker unavailable
     } finally {
-      setBrowseLoading(false);
+      setPicking(false);
     }
-  };
-
-  const navigateTo = async (dirPath: string) => {
-    setBrowseLoading(true);
-    setBrowseError(null);
-    try {
-      const data = await browseDirectory(dirPath);
-      setBrowseData(data);
-    } catch {
-      setBrowseError('cannot access directory');
-    } finally {
-      setBrowseLoading(false);
-    }
-  };
-
-  const selectDir = (dirPath: string) => {
-    updateProjectPath(dirPath);
-    setShowBrowser(false);
   };
 
   return (
@@ -130,56 +105,18 @@ export const NewSessionDialog = observer(({ store }: Props) => {
               onKeyDown={handleKeyDown}
               className="bg-black/50 flex-1"
             />
-            <Button size="icon" variant="outline" className="shrink-0" onClick={() => openBrowser()} type="button">
+            <Button
+              size="icon"
+              variant="outline"
+              className="shrink-0"
+              onClick={handlePickDirectory}
+              disabled={picking}
+              type="button"
+            >
               <FolderOpen className="h-4 w-4" />
             </Button>
           </div>
         </div>
-
-        {showBrowser && (
-          <div className="border border-border bg-black/30 max-h-[250px] overflow-hidden flex flex-col">
-            {browseLoading && !browseData && (
-              <div className="p-3 text-sm text-zinc-500">loading...</div>
-            )}
-            {browseError && (
-              <div className="p-3 text-sm text-red-400">{browseError}</div>
-            )}
-            {browseData && (
-              <>
-                <div className="px-3 py-2 border-b border-border flex items-center justify-between bg-zinc-900">
-                  <span className="text-xs text-zinc-400 truncate font-[--font-mono]">{browseData.current}</span>
-                  <Button size="sm" variant="outline" onClick={() => selectDir(browseData.current)}>
-                    select this folder
-                  </Button>
-                </div>
-                <div className="flex-1 overflow-y-auto">
-                  {browseData.parent && (
-                    <div
-                      className="px-3 py-1.5 text-sm text-zinc-400 cursor-pointer hover:bg-zinc-900 transition-colors border-b border-zinc-800"
-                      onClick={() => navigateTo(browseData.parent!)}
-                    >
-                      ..
-                    </div>
-                  )}
-                  {browseData.dirs.map((d) => (
-                    <div
-                      key={d.path}
-                      className="px-3 py-1.5 text-sm text-zinc-300 cursor-pointer hover:bg-zinc-900 transition-colors border-b border-zinc-800 flex items-center gap-2"
-                      onClick={() => navigateTo(d.path)}
-                      onDoubleClick={() => selectDir(d.path)}
-                    >
-                      <FolderOpen className="h-3.5 w-3.5 text-zinc-500" />
-                      {d.name}
-                    </div>
-                  ))}
-                  {browseData.dirs.length === 0 && (
-                    <div className="p-3 text-sm text-zinc-500">no subdirectories</div>
-                  )}
-                </div>
-              </>
-            )}
-          </div>
-        )}
 
         <ChatInput
           value={message}
