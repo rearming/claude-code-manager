@@ -10,7 +10,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/shadcn/ui/select';
+import { ChatInput } from './ChatInput';
 import type { SessionStore } from '../stores/SessionStore';
+import type { ImageAttachment } from '../types';
 import { browseDirectory, type BrowseResult } from '../api';
 
 interface Props {
@@ -38,19 +40,15 @@ export const NewSessionDialog = observer(({ store }: Props) => {
 
   const projectPaths = [...new Set(store.sessions.map((s) => s.project))].sort();
 
-  const handleSubmit = () => {
-    const trimmedMsg = message.trim();
+  const handleSubmit = (text: string, images?: ImageAttachment[]) => {
     const trimmedPath = projectPath.trim();
-    if (!trimmedMsg || !trimmedPath) return;
+    if (!text || !trimmedPath) return;
     localStorage.removeItem('ccm-new-session-message');
-    store.startNewSession(trimmedMsg, trimmedPath);
+    setMessage('');
+    store.startNewSession(text, trimmedPath, images);
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter' && !e.shiftKey && message.trim() && projectPath.trim()) {
-      e.preventDefault();
-      handleSubmit();
-    }
     if (e.key === 'Escape') {
       if (showBrowser) {
         setShowBrowser(false);
@@ -95,7 +93,7 @@ export const NewSessionDialog = observer(({ store }: Props) => {
   return (
     <div className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center" onClick={() => store.closeNewSession()}>
       <div
-        className="w-full max-w-lg bg-background border border-border p-5 space-y-4"
+        className="w-full max-w-2xl bg-background border border-border p-5 space-y-4"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between">
@@ -107,32 +105,32 @@ export const NewSessionDialog = observer(({ store }: Props) => {
 
         <div className="space-y-2">
           <label className="text-xs text-zinc-500 uppercase tracking-wide">project directory</label>
-          {projectPaths.length > 0 && (
-            <Select
-              value={projectPath || '__none__'}
-              onValueChange={(val) => updateProjectPath(val === '__none__' ? '' : val)}
-            >
-              <SelectTrigger className="w-full h-8 bg-black/50 text-sm text-zinc-300">
-                <SelectValue placeholder="select a project..." />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="__none__">select a project...</SelectItem>
-                {projectPaths.map((p) => (
-                  <SelectItem key={p} value={p}>{p}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          )}
           <div className="flex gap-2">
+            {projectPaths.length > 0 && (
+              <Select
+                value={projectPath || '__none__'}
+                onValueChange={(val) => updateProjectPath(val === '__none__' ? '' : val)}
+              >
+                <SelectTrigger className="w-[200px] shrink-0 h-9 bg-black/50 text-sm text-zinc-300">
+                  <SelectValue placeholder="recent..." />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__none__">recent projects...</SelectItem>
+                  {projectPaths.map((p) => (
+                    <SelectItem key={p} value={p}>{p}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
             <Input
               type="text"
-              placeholder={projectPaths.length > 0 ? 'or type a custom path...' : '/path/to/project'}
+              placeholder="/path/to/project"
               value={projectPath}
               onChange={(e) => updateProjectPath(e.target.value)}
               onKeyDown={handleKeyDown}
-              className="bg-black/50"
+              className="bg-black/50 flex-1"
             />
-            <Button size="icon" variant="outline" onClick={() => openBrowser()} type="button">
+            <Button size="icon" variant="outline" className="shrink-0" onClick={() => openBrowser()} type="button">
               <FolderOpen className="h-4 w-4" />
             </Button>
           </div>
@@ -183,26 +181,16 @@ export const NewSessionDialog = observer(({ store }: Props) => {
           </div>
         )}
 
-        <div className="space-y-2">
-          <label className="text-xs text-zinc-500 uppercase tracking-wide">message</label>
-          <textarea
-            className="w-full bg-black/50 border border-input text-sm text-zinc-300 px-3 py-2 rounded-none resize-none focus:outline-none focus:ring-1 focus:ring-ring placeholder:text-zinc-600 font-[inherit]"
-            placeholder="what would you like to work on?"
-            value={message}
-            onChange={(e) => updateMessage(e.target.value)}
-            onKeyDown={handleKeyDown}
-            rows={3}
-          />
-        </div>
-
-        <Button
-          variant="default"
-          className="w-full"
-          onClick={handleSubmit}
-          disabled={!message.trim() || !projectPath.trim()}
-        >
-          start session
-        </Button>
+        <ChatInput
+          value={message}
+          onChange={updateMessage}
+          onSubmit={handleSubmit}
+          disabled={!projectPath.trim()}
+          placeholder="what would you like to work on? (paste/drop images)"
+          submitLabel="start session"
+          rows={4}
+          onKeyDown={handleKeyDown}
+        />
       </div>
     </div>
   );

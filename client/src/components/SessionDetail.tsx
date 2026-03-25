@@ -1,10 +1,10 @@
-import { useState, useRef, useEffect, useCallback, useImperativeHandle, forwardRef } from 'react';
+import { useState, useRef, useEffect, useCallback, forwardRef } from 'react';
 import { observer } from 'mobx-react-lite';
 import Markdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import rehypeHighlight from 'rehype-highlight';
 import 'highlight.js/styles/github-dark.min.css';
-import { ArrowLeft, GitFork, Copy, ChevronDown, ChevronRight, ArrowDown, Send, X, ImagePlus, Pencil, Download, ClipboardCopy, MessageSquarePlus } from 'lucide-react';
+import { ArrowLeft, GitFork, Copy, ChevronDown, ChevronRight, ArrowDown, X, Pencil, Download, ClipboardCopy, MessageSquarePlus } from 'lucide-react';
 import { Button } from '@/components/shadcn/ui/button';
 import {
   Dialog,
@@ -13,6 +13,8 @@ import {
 } from '@/components/shadcn/ui/dialog';
 import { VisuallyHidden } from '@radix-ui/react-visually-hidden';
 import AnnotationCanvas from './AnnotationCanvas';
+import { ChatInput } from './ChatInput';
+import type { ChatInputHandle } from './ChatInput';
 import type { DrawCommand } from './AnnotationCanvas';
 import { cacheImage, saveAnnotatedImage } from '../api';
 import type { SessionStore, StreamingToolCall, StreamingBlock } from '../stores/SessionStore';
@@ -86,7 +88,7 @@ export const SessionDetail = observer(({ store }: Props) => {
     }
   }, [store.pendingUserMessage, store.settings.autoScrollOnNewMessages, scrollToBottom]);
 
-  const messageInputRef = useRef<MessageInputHandle>(null);
+  const messageInputRef = useRef<ChatInputHandle>(null);
 
   const handleResume = async () => {
     await store.resume(summary.sessionId);
@@ -781,30 +783,11 @@ function ToolCallFormatted({ input, toolName }: { input: Record<string, unknown>
   );
 }
 
-interface MessageInputHandle {
-  addImageAttachment: (attachment: ImageAttachment) => void;
-}
-
 interface MessageInputProps {
   onSend: (message: string, images?: ImageAttachment[]) => void;
   onCancel: () => void;
   sending: boolean;
   sessionId: string;
-}
-
-const ACCEPTED_IMAGE_TYPES = ['image/png', 'image/jpeg', 'image/gif', 'image/webp'];
-
-function fileToImageAttachment(file: File): Promise<ImageAttachment> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => {
-      const result = reader.result as string;
-      const base64 = result.split(',')[1];
-      resolve({ mediaType: file.type, data: base64 });
-    };
-    reader.onerror = reject;
-    reader.readAsDataURL(file);
-  });
 }
 
 const DRAFT_CACHE_KEY = 'ccm-chat-drafts';
@@ -819,151 +802,36 @@ function setDraftCache(sessionId: string, text: string) {
   localStorage.setItem(DRAFT_CACHE_KEY, JSON.stringify(cache));
 }
 
-const MessageInput = forwardRef<MessageInputHandle, MessageInputProps>(function MessageInput({ onSend, onCancel, sending, sessionId }, ref) {
+const MessageInput = forwardRef<ChatInputHandle, MessageInputProps>(function MessageInput({ onSend, onCancel, sending, sessionId }, ref) {
   const [text, setText] = useState(() => getDraftCache()[sessionId] || '');
-  const [images, setImages] = useState<ImageAttachment[]>([]);
   const prevSessionIdRef = useRef(sessionId);
   if (prevSessionIdRef.current !== sessionId) {
     prevSessionIdRef.current = sessionId;
     setText(getDraftCache()[sessionId] || '');
-    setImages([]);
   }
-  const [dragOver, setDragOver] = useState(false);
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
 
-  useImperativeHandle(ref, () => ({
-    addImageAttachment: (attachment: ImageAttachment) => {
-      setImages(prev => [...prev, attachment]);
-    },
-  }));
+  const handleChange = (val: string) => {
+    setText(val);
+    setDraftCache(sessionId, val);
+  };
 
-  const addImages = useCallback(async (files: File[]) => {
-    const valid = files.filter(f => ACCEPTED_IMAGE_TYPES.includes(f.type));
-    if (valid.length === 0) return;
-    const attachments = await Promise.all(valid.map(fileToImageAttachment));
-    setImages(prev => [...prev, ...attachments]);
-  }, []);
-
-  const handleSubmit = () => {
-    const trimmed = text.trim();
-    if ((!trimmed && images.length === 0) || sending) return;
-    onSend(trimmed || '(image)', images.length > 0 ? images : undefined);
+  const handleSubmit = (message: string, images?: ImageAttachment[]) => {
+    onSend(message, images);
     setText('');
     setDraftCache(sessionId, '');
-    setImages([]);
-  };
-
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
-      handleSubmit();
-    }
-    if (e.key === 'Escape' && sending) {
-      onCancel();
-    }
-  };
-
-  const handlePaste = useCallback(async (e: React.ClipboardEvent) => {
-    const items = Array.from(e.clipboardData.items);
-    const imageItems = items.filter(item => item.type.startsWith('image/'));
-    if (imageItems.length === 0) return;
-    e.preventDefault();
-    const files = imageItems.map(item => item.getAsFile()).filter(Boolean) as File[];
-    await addImages(files);
-  }, [addImages]);
-
-  const handleDrop = useCallback(async (e: React.DragEvent) => {
-    e.preventDefault();
-    setDragOver(false);
-    const files = Array.from(e.dataTransfer.files).filter(f => f.type.startsWith('image/'));
-    await addImages(files);
-  }, [addImages]);
-
-  const handleDragOver = useCallback((e: React.DragEvent) => {
-    e.preventDefault();
-    setDragOver(true);
-  }, []);
-
-  const handleDragLeave = useCallback(() => {
-    setDragOver(false);
-  }, []);
-
-  const removeImage = (index: number) => {
-    setImages(prev => prev.filter((_, i) => i !== index));
   };
 
   return (
-    <div
-      className={`p-3 border-t border-border ${dragOver ? 'bg-zinc-800/50 border-zinc-500' : ''}`}
-      onDrop={handleDrop}
-      onDragOver={handleDragOver}
-      onDragLeave={handleDragLeave}
-    >
-      {images.length > 0 && (
-        <div className="flex gap-2 mb-2 flex-wrap">
-          {images.map((img, i) => (
-            <div key={i} className="relative group">
-              <img
-                src={`data:${img.mediaType};base64,${img.data}`}
-                alt={`attachment ${i + 1}`}
-                className="h-16 w-16 object-cover border border-border"
-              />
-              <button
-                className="absolute -top-1.5 -right-1.5 h-4 w-4 bg-red-600 text-white flex items-center justify-center text-xs opacity-0 group-hover:opacity-100 transition-opacity"
-                onClick={() => removeImage(i)}
-              >
-                &times;
-              </button>
-            </div>
-          ))}
-        </div>
-      )}
-      <div className="flex gap-2">
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept="image/png,image/jpeg,image/gif,image/webp"
-          multiple
-          className="hidden"
-          onChange={async (e) => {
-            if (e.target.files) {
-              await addImages(Array.from(e.target.files));
-              e.target.value = '';
-            }
-          }}
-        />
-        <button
-          className="self-end p-2 text-zinc-500 hover:text-zinc-300 transition-colors border border-border hover:border-zinc-500"
-          onClick={() => fileInputRef.current?.click()}
-          disabled={sending}
-          title="Attach images"
-        >
-          <ImagePlus className="h-4 w-4" />
-        </button>
-        <textarea
-          ref={textareaRef}
-          className="flex-1 bg-black/50 border border-input text-sm text-zinc-300 px-3 py-2 rounded-none resize-none focus:outline-none focus:ring-1 focus:ring-ring placeholder:text-zinc-600 font-[inherit]"
-          placeholder={sending ? 'claude is responding... (esc to cancel)' : 'send a message... (paste/drop images, enter to send)'}
-          value={text}
-          onChange={(e) => { setText(e.target.value); setDraftCache(sessionId, e.target.value); }}
-          onKeyDown={handleKeyDown}
-          onPaste={handlePaste}
-          disabled={sending}
-          rows={2}
-        />
-        {sending ? (
-          <Button variant="destructive" onClick={onCancel} className="self-end">
-            <X className="h-4 w-4 mr-1" />
-            cancel
-          </Button>
-        ) : (
-          <Button variant="outline" onClick={handleSubmit} disabled={!text.trim() && images.length === 0} className="self-end">
-            <Send className="h-4 w-4 mr-1" />
-            send
-          </Button>
-        )}
-      </div>
+    <div className="p-3 border-t border-border">
+      <ChatInput
+        ref={ref}
+        value={text}
+        onChange={handleChange}
+        onSubmit={handleSubmit}
+        onCancel={onCancel}
+        sending={sending}
+        placeholder={sending ? 'claude is responding... (esc to cancel)' : 'send a message... (paste/drop images, enter to send)'}
+      />
     </div>
   );
 });
