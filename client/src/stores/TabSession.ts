@@ -57,6 +57,7 @@ export class TabSession {
   // Callbacks to parent store
   private _onSessionsChanged: () => void;
   private _getDangerouslySkipPermissions: () => boolean;
+  private _getCustomName: (sessionId: string) => string | undefined;
   private _reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private _rawLinesPersistTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -64,14 +65,17 @@ export class TabSession {
     sessionId: string | null,
     onSessionsChanged: () => void,
     getDangerouslySkipPermissions: () => boolean,
+    getCustomName: (sessionId: string) => string | undefined,
   ) {
     this.tabId = `tab-${nextTabId++}`;
     this.sessionId = sessionId;
     this._onSessionsChanged = onSessionsChanged;
     this._getDangerouslySkipPermissions = getDangerouslySkipPermissions;
-    makeAutoObservable<TabSession, '_onSessionsChanged' | '_getDangerouslySkipPermissions' | '_reconnectTimer' | '_rawLinesPersistTimer'>(this, {
+    this._getCustomName = getCustomName;
+    makeAutoObservable<TabSession, '_onSessionsChanged' | '_getDangerouslySkipPermissions' | '_getCustomName' | '_reconnectTimer' | '_rawLinesPersistTimer'>(this, {
       _onSessionsChanged: false,
       _getDangerouslySkipPermissions: false,
+      _getCustomName: false,
       _reconnectTimer: false,
       _rawLinesPersistTimer: false,
     });
@@ -79,6 +83,10 @@ export class TabSession {
 
   /** Display title for the tab */
   get title(): string {
+    if (this.sessionId) {
+      const custom = this._getCustomName(this.sessionId);
+      if (custom) return custom;
+    }
     if (this.selectedDetail) {
       const s = this.selectedDetail.summary;
       return s.slug?.replaceAll('-', ' ') || s.firstMessage.slice(0, 40) || 'untitled';

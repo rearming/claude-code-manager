@@ -11,6 +11,8 @@ const SETTINGS_KEY = 'ccm-settings';
 const SCROLL_POSITIONS_KEY = 'ccm-scroll-positions';
 const ARCHIVED_SESSIONS_KEY = 'ccm-archived-sessions';
 const OPEN_TABS_KEY = 'ccm-open-tabs';
+const CUSTOM_NAMES_KEY = 'ccm-custom-names';
+const TAB_WIDTHS_KEY = 'ccm-tab-widths';
 
 interface PanelLayout {
   sidebarSize: number;
@@ -77,6 +79,24 @@ function loadArchivedSessions(): Set<string> {
   }
 }
 
+function loadCustomNames(): Record<string, string> {
+  try {
+    const raw = localStorage.getItem(CUSTOM_NAMES_KEY);
+    return raw ? JSON.parse(raw) : {};
+  } catch {
+    return {};
+  }
+}
+
+function loadTabWidths(): Record<string, number> {
+  try {
+    const raw = localStorage.getItem(TAB_WIDTHS_KEY);
+    return raw ? JSON.parse(raw) : {};
+  } catch {
+    return {};
+  }
+}
+
 function loadOpenTabs(): { tabSessionIds: string[]; activeTabId: string | null; minimizedTabIds: string[] } {
   try {
     const raw = sessionStorage.getItem(OPEN_TABS_KEY);
@@ -111,6 +131,10 @@ export class SessionStore {
   tabs: TabSession[] = [];
   activeTabId: string | null = null;
   minimizedTabIds: Set<string> = new Set();
+
+  // ── Custom names & tab widths (persisted per sessionId) ──
+  customNames: Record<string, string> = loadCustomNames();
+  tabWidths: Record<string, number> = loadTabWidths();
 
   constructor() {
     makeAutoObservable(this);
@@ -163,6 +187,7 @@ export class SessionStore {
       sessionId,
       () => this.loadSessions(),
       () => this.settings.dangerouslySkipPermissions,
+      (sid: string) => this.customNames[sid],
     );
   }
 
@@ -370,7 +395,8 @@ export class SessionStore {
         (s) =>
           s.firstMessage.toLowerCase().includes(q) ||
           (s.slug && s.slug.toLowerCase().includes(q)) ||
-          s.sessionId.includes(q)
+          s.sessionId.includes(q) ||
+          (this.customNames[s.sessionId] && this.customNames[s.sessionId].toLowerCase().includes(q))
       );
     }
 
@@ -431,6 +457,33 @@ export class SessionStore {
 
   isArchived(sessionId: string): boolean {
     return this.archivedSessionIds.has(sessionId);
+  }
+
+  // ── Custom names ────────────────────────────────────────────
+
+  renameSession(sessionId: string, name: string) {
+    const trimmed = name.trim();
+    if (trimmed) {
+      this.customNames[sessionId] = trimmed;
+    } else {
+      delete this.customNames[sessionId];
+    }
+    this.persistCustomNames();
+  }
+
+  getCustomName(sessionId: string): string | undefined {
+    return this.customNames[sessionId];
+  }
+
+  // ── Tab widths ─────────────────────────────────────────────
+
+  setTabWidth(sessionId: string, width: number) {
+    this.tabWidths[sessionId] = Math.max(80, Math.min(600, width));
+    this.persistTabWidths();
+  }
+
+  getTabWidth(sessionId: string): number | undefined {
+    return this.tabWidths[sessionId];
   }
 
   // ── Loading ───────────────────────────────────────────────
@@ -496,6 +549,14 @@ export class SessionStore {
 
   private persistArchivedSessions() {
     localStorage.setItem(ARCHIVED_SESSIONS_KEY, JSON.stringify([...this.archivedSessionIds]));
+  }
+
+  private persistCustomNames() {
+    localStorage.setItem(CUSTOM_NAMES_KEY, JSON.stringify(this.customNames));
+  }
+
+  private persistTabWidths() {
+    localStorage.setItem(TAB_WIDTHS_KEY, JSON.stringify(this.tabWidths));
   }
 
   private persistTabs() {

@@ -8,6 +8,7 @@ interface Props {
   isSelected: boolean;
   status?: SessionStatus;
   isArchived?: boolean;
+  customName?: string;
   onClick: () => void;
   onArchive?: () => void;
 }
@@ -33,10 +34,9 @@ function truncate(text: string, maxLen: number): string {
   return text.slice(0, maxLen) + '...';
 }
 
-export function SessionCard({ session, isSelected, status, isArchived, onClick, onArchive }: Props) {
-  const title = session.slug
-    ? session.slug.replaceAll('-', ' ')
-    : truncate(session.firstMessage, 60);
+export function SessionCard({ session, isSelected, status, isArchived, customName, onClick, onArchive }: Props) {
+  const title = customName
+    || (session.slug ? session.slug.replaceAll('-', ' ') : truncate(session.firstMessage, 60));
 
   const borderColor = status === 'streaming'
     ? 'border-l-green-500'

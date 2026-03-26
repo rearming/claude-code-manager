@@ -43,6 +43,7 @@ export const SessionList = observer(({ store }: Props) => {
               isSelected={activeSessionId === session.sessionId}
               status={getStatus(session.sessionId)}
               isArchived={store.isArchived(session.sessionId)}
+              customName={store.getCustomName(session.sessionId)}
               onClick={() => store.openTab(session.sessionId)}
               onArchive={() =>
                 store.isArchived(session.sessionId)
