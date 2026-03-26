@@ -47,7 +47,7 @@ export function SessionCard({ session, isSelected, status, isArchived, customNam
   return (
     <div
       className={`group px-4 py-3 border-b border-border cursor-pointer transition-colors hover:bg-zinc-900 ${
-        isSelected || status ? 'bg-zinc-800 border-l-2 ' + borderColor : ''
+        isSelected ? 'bg-zinc-800 border-l-2 ' + borderColor : status ? 'border-l-2 ' + borderColor : ''
       }`}
       onClick={onClick}
     >
