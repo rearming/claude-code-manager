@@ -1,5 +1,5 @@
 import { observer } from 'mobx-react-lite';
-import { Archive, Search } from 'lucide-react';
+import { Archive, Search, PanelTop } from 'lucide-react';
 import { Input } from '@/components/shadcn/ui/input';
 import {
   Select,
@@ -46,9 +46,18 @@ export const SearchBar = observer(({ store }: Props) => {
           </SelectContent>
         </Select>
         <Button
+          variant={store.showOpenTabsOnly ? "default" : "outline"}
+          size="sm"
+          className={`shrink-0 h-7 px-2 text-sm flex items-center gap-1.5 bg-black/50 border-zinc-600 text-zinc-500 hover:text-zinc-300 hover:border-zinc-600 focus:ring-0 rounded-none lowercase ${store.showOpenTabsOnly ? 'text-zinc-200 border-zinc-400' : ''}`}
+          onClick={() => store.toggleShowOpenTabsOnly()}
+          title={store.showOpenTabsOnly ? 'showing open tabs only' : 'show open tabs only'}
+        >
+          <PanelTop className="h-3.5 w-3.5" />
+        </Button>
+        <Button
           variant={store.showArchived ? "default" : "outline"}
           size="sm"
-          className={`shrink-0 h-7 px-2 text-sm flex items-center gap-1.5 bg-black/50 border-zinc-600 text-zinc-500 hover:text-zinc-300 hover:border-zinc-600 focus:ring-0 rounded-none lowercase`}
+          className={`shrink-0 h-7 px-2 text-sm flex items-center gap-1.5 bg-black/50 border-zinc-600 text-zinc-500 hover:text-zinc-300 hover:border-zinc-600 focus:ring-0 rounded-none lowercase ${store.showArchived ? 'text-zinc-200 border-zinc-400' : ''}`}
           onClick={() => store.toggleShowArchived()}
           title={store.showArchived ? 'showing archived' : 'show archived'}
         >

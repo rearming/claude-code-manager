@@ -27,6 +27,16 @@ export async function pickDirectory(startPath?: string): Promise<string | null> 
   return data.path ?? null;
 }
 
+export async function searchProjectFiles(project: string, query?: string): Promise<string[]> {
+  const url = new URL(`${BASE}/files`, window.location.origin);
+  url.searchParams.set('project', project);
+  if (query) url.searchParams.set('q', query);
+  const res = await fetch(url.toString());
+  if (!res.ok) return [];
+  const data = await res.json();
+  return data.files ?? [];
+}
+
 export async function fetchSessions(params?: {
   project?: string;
   search?: string;

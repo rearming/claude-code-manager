@@ -7,6 +7,7 @@ import launchRouter from './routes/launch.js';
 import browseRouter from './routes/browse.js';
 import pickDirectoryRouter from './routes/pick-directory.js';
 import imagesRouter from './routes/images.js';
+import filesRouter from './routes/files.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -22,6 +23,7 @@ app.use('/api/sessions', launchRouter);
 app.use('/api/browse', browseRouter);
 app.use('/api/pick-directory', pickDirectoryRouter);
 app.use('/api/images', imagesRouter);
+app.use('/api/files', filesRouter);
 
 // Serve static client build in production
 const clientDist = path.join(__dirname, '..', '..', 'client', 'dist');

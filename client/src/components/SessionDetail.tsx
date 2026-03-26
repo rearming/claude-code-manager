@@ -4,7 +4,7 @@ import Markdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import rehypeHighlight from 'rehype-highlight';
 import 'highlight.js/styles/github-dark.min.css';
-import { ArrowLeft, GitFork, Copy, ChevronDown, ChevronRight, ArrowDown, X, Pencil, Download, ClipboardCopy, MessageSquarePlus } from 'lucide-react';
+import { GitFork, Copy, ChevronDown, ChevronRight, ArrowDown, X, Pencil, Download, ClipboardCopy, MessageSquarePlus } from 'lucide-react';
 import { Button } from '@/components/shadcn/ui/button';
 import {
   Dialog,
@@ -117,9 +117,6 @@ export const SessionDetail = observer(({ store, tab }: Props) => {
     <div className="flex flex-col h-full">
       {/* header */}
       <div className="px-5 py-3 border-b border-border flex items-start gap-3">
-        <Button size="sm" variant="ghost" onClick={() => store.closeTab(tab.tabId)}>
-          <ArrowLeft className="h-4 w-4" />
-        </Button>
         <div className="flex-1 min-w-0">
           <h2 className="text-base font-bold text-zinc-200 truncate">
             {store.getCustomName(summary.sessionId) || summary.slug?.replaceAll('-', ' ') || summary.firstMessage.slice(0, 60)}
@@ -295,6 +292,7 @@ export const SessionDetail = observer(({ store, tab }: Props) => {
       <MessageInput
         ref={messageInputRef}
         sessionId={summary.sessionId}
+        projectPath={summary.project}
         onSend={(msg, images) => tab.sendMessage(summary.sessionId, msg, images)}
         sending={tab.sending}
         onCancel={() => tab.cancelSend()}
@@ -848,6 +846,7 @@ interface MessageInputProps {
   onCancel: () => void;
   sending: boolean;
   sessionId: string;
+  projectPath?: string;
 }
 
 const DRAFT_CACHE_KEY = 'ccm-chat-drafts';
@@ -862,7 +861,7 @@ function setDraftCache(sessionId: string, text: string) {
   localStorage.setItem(DRAFT_CACHE_KEY, JSON.stringify(cache));
 }
 
-const MessageInput = forwardRef<ChatInputHandle, MessageInputProps>(function MessageInput({ onSend, onCancel, sending, sessionId }, ref) {
+const MessageInput = forwardRef<ChatInputHandle, MessageInputProps>(function MessageInput({ onSend, onCancel, sending, sessionId, projectPath }, ref) {
   const [text, setText] = useState(() => getDraftCache()[sessionId] || '');
   const prevSessionIdRef = useRef(sessionId);
   if (prevSessionIdRef.current !== sessionId) {
@@ -890,6 +889,7 @@ const MessageInput = forwardRef<ChatInputHandle, MessageInputProps>(function Mes
         onSubmit={handleSubmit}
         onCancel={onCancel}
         sending={sending}
+        projectPath={projectPath}
         placeholder={sending ? 'draft your next message... (esc to cancel stream)' : 'send a message... (paste/drop images, enter to send)'}
       />
     </div>

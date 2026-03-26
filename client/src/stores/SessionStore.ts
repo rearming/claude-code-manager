@@ -31,6 +31,7 @@ interface Settings {
   showTerminal: boolean;
   panelLayout: PanelLayout;
   projectFilter: string;
+  showOpenTabsOnly: boolean;
 }
 
 const defaultPanelLayout: PanelLayout = {
@@ -50,6 +51,7 @@ const defaultSettings: Settings = {
   showTerminal: false,
   panelLayout: { ...defaultPanelLayout },
   projectFilter: '',
+  showOpenTabsOnly: false,
 };
 
 function loadSettings(): Settings {
@@ -125,6 +127,7 @@ export class SessionStore {
   showSettings = false;
   archivedSessionIds: Set<string> = loadArchivedSessions();
   showArchived = false;
+  showOpenTabsOnly = loadSettings().showOpenTabsOnly || false;
   showNewSession = false;
 
   // ── Tab management ────────────────────────────────────────
@@ -385,6 +388,11 @@ export class SessionStore {
       result = result.filter((s) => !this.archivedSessionIds.has(s.sessionId));
     }
 
+    if (this.showOpenTabsOnly) {
+      const openSessionIds = new Set(this.tabs.map(t => t.sessionId));
+      result = result.filter((s) => openSessionIds.has(s.sessionId));
+    }
+
     if (this.projectFilter) {
       result = result.filter((s) => s.project === this.projectFilter);
     }
@@ -443,6 +451,12 @@ export class SessionStore {
 
   toggleShowArchived() {
     this.showArchived = !this.showArchived;
+  }
+
+  toggleShowOpenTabsOnly() {
+    this.showOpenTabsOnly = !this.showOpenTabsOnly;
+    this.settings.showOpenTabsOnly = this.showOpenTabsOnly;
+    this.persistSettings();
   }
 
   archiveSession(sessionId: string) {

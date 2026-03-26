@@ -1,6 +1,7 @@
 import { useState, useRef, useCallback, useImperativeHandle, forwardRef, useEffect } from 'react';
-import { Send, X, ImagePlus } from 'lucide-react';
+import { Send, X, ImagePlus, AtSign } from 'lucide-react';
 import { Button } from '@/components/shadcn/ui/button';
+import { FileMentionDropdown } from './FileMentionDropdown';
 import type { ImageAttachment } from '../types';
 
 const ACCEPTED_IMAGE_TYPES = ['image/png', 'image/jpeg', 'image/gif', 'image/webp'];
@@ -33,6 +34,13 @@ interface ChatInputProps {
   submitLabel?: string;
   rows?: number;
   onKeyDown?: (e: React.KeyboardEvent) => void;
+  projectPath?: string;
+}
+
+interface MentionState {
+  active: boolean;
+  query: string;
+  startPos: number;
 }
 
 export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function ChatInput({
@@ -46,11 +54,19 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
   submitLabel = 'send',
   rows = 2,
   onKeyDown: externalKeyDown,
+  projectPath,
 }, ref) {
   const [images, setImages] = useState<ImageAttachment[]>([]);
   const [dragOver, setDragOver] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  // File mention state
+  const [mention, setMention] = useState<MentionState>({ active: false, query: '', startPos: 0 });
+  const [mentionIndex, setMentionIndex] = useState(0);
+  const [mentionFiles, setMentionFiles] = useState<string[]>([]);
+  const mentionDropdownRef = useRef<{ getFiles: () => string[]; getSelectedIndex: () => number }>(null);
 
   useImperativeHandle(ref, () => ({
     addImageAttachment: (attachment: ImageAttachment) => {
@@ -65,7 +81,63 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
     setImages(prev => [...prev, ...attachments]);
   }, []);
 
+  const closeMention = useCallback(() => {
+    setMention({ active: false, query: '', startPos: 0 });
+    setMentionIndex(0);
+  }, []);
+
+  const insertMention = useCallback((filePath: string) => {
+    const before = value.substring(0, mention.startPos);
+    const cursorPos = textareaRef.current?.selectionStart ?? (mention.startPos + mention.query.length + 1);
+    const after = value.substring(cursorPos);
+    const newValue = `${before}@${filePath} ${after}`;
+    onChange(newValue);
+    closeMention();
+
+    requestAnimationFrame(() => {
+      const textarea = textareaRef.current;
+      if (textarea) {
+        const newPos = mention.startPos + filePath.length + 2;
+        textarea.selectionStart = newPos;
+        textarea.selectionEnd = newPos;
+        textarea.focus();
+      }
+    });
+  }, [value, onChange, mention.startPos, mention.query.length, closeMention]);
+
+  const detectMention = useCallback(() => {
+    const textarea = textareaRef.current;
+    if (!textarea || !projectPath) return;
+
+    const cursorPos = textarea.selectionStart;
+    const textBefore = value.substring(0, cursorPos);
+
+    const lastAtIndex = textBefore.lastIndexOf('@');
+    if (lastAtIndex === -1) {
+      if (mention.active) closeMention();
+      return;
+    }
+
+    // @ must be at start or preceded by whitespace/newline
+    if (lastAtIndex > 0 && !/[\s\n]/.test(textBefore[lastAtIndex - 1])) {
+      if (mention.active) closeMention();
+      return;
+    }
+
+    const query = textBefore.substring(lastAtIndex + 1);
+
+    // Close if query has whitespace (user moved on)
+    if (/\s/.test(query)) {
+      if (mention.active) closeMention();
+      return;
+    }
+
+    setMention({ active: true, query, startPos: lastAtIndex });
+    setMentionIndex(0);
+  }, [value, projectPath, mention.active, closeMention]);
+
   const handleSubmit = () => {
+    if (mention.active) return; // don't submit while mention is open
     const trimmed = value.trim();
     if ((!trimmed && images.length === 0) || sending || disabled) return;
     onSubmit(trimmed || '(image)', images.length > 0 ? images : undefined);
@@ -73,6 +145,33 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
+    // If mention dropdown is active, intercept navigation keys
+    if (mention.active && mentionFiles.length > 0) {
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        setMentionIndex(prev => Math.min(prev + 1, mentionFiles.length - 1));
+        return;
+      }
+      if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        setMentionIndex(prev => Math.max(prev - 1, 0));
+        return;
+      }
+      if (e.key === 'Enter' || e.key === 'Tab') {
+        e.preventDefault();
+        if (mentionFiles[mentionIndex]) {
+          insertMention(mentionFiles[mentionIndex]);
+        }
+        return;
+      }
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        e.stopPropagation();
+        closeMention();
+        return;
+      }
+    }
+
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       handleSubmit();
@@ -82,6 +181,15 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
     }
     externalKeyDown?.(e);
   };
+
+  const handleChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    onChange(e.target.value);
+  };
+
+  // Detect mention on every value/cursor change
+  useEffect(() => {
+    detectMention();
+  }, [value]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handlePaste = useCallback(async (e: React.ClipboardEvent) => {
     const items = Array.from(e.clipboardData.items);
@@ -111,6 +219,30 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
   const removeImage = (index: number) => {
     setImages(prev => prev.filter((_, i) => i !== index));
   };
+
+  const triggerMention = useCallback(() => {
+    const textarea = textareaRef.current;
+    if (!textarea || !projectPath) return;
+
+    const cursorPos = textarea.selectionStart;
+    const before = value.substring(0, cursorPos);
+    const after = value.substring(cursorPos);
+
+    // Insert @ at cursor if not already preceded by @
+    const needsSpace = before.length > 0 && !/[\s\n]$/.test(before);
+    const insert = (needsSpace ? ' ' : '') + '@';
+    const newValue = before + insert + after;
+    onChange(newValue);
+
+    requestAnimationFrame(() => {
+      if (textarea) {
+        const newPos = cursorPos + insert.length;
+        textarea.selectionStart = newPos;
+        textarea.selectionEnd = newPos;
+        textarea.focus();
+      }
+    });
+  }, [value, onChange, projectPath]);
 
   const canSubmit = (value.trim() || images.length > 0) && !sending && !disabled;
 
@@ -162,12 +294,22 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
 
   return (
     <div
-      className={`flex flex-col border border-input rounded-none ${dragOver ? 'bg-zinc-800/50 border-zinc-500' : 'bg-black/50'}`}
+      ref={containerRef}
+      className={`relative flex flex-col border border-input rounded-none ${dragOver ? 'bg-zinc-800/50 border-zinc-500' : 'bg-black/50'}`}
       style={height ? { height } : undefined}
       onDrop={handleDrop}
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
     >
+      <FileMentionDropdown
+        query={mention.query}
+        projectPath={projectPath ?? ''}
+        visible={mention.active}
+        selectedIndex={mentionIndex}
+        onSelect={insertMention}
+        onClose={closeMention}
+        onFilesChange={setMentionFiles}
+      />
       <div
         ref={dragHandleRef}
         className="flex items-center justify-center h-2 cursor-ns-resize group hover:bg-zinc-700/50 transition-colors"
@@ -211,21 +353,34 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
         className="w-full flex-1 min-h-0 bg-transparent text-sm text-zinc-300 px-3 py-2 resize-none focus:outline-none placeholder:text-zinc-600 font-[inherit]"
         placeholder={placeholder}
         value={value}
-        onChange={(e) => onChange(e.target.value)}
+        onChange={handleChange}
         onKeyDown={handleKeyDown}
         onPaste={handlePaste}
+        onClick={detectMention}
         disabled={disabled}
         rows={rows}
       />
       <div className="flex items-center justify-between px-2 pb-2">
-        <button
-          className="p-1.5 text-zinc-500 hover:text-zinc-300 transition-colors"
-          onClick={() => fileInputRef.current?.click()}
-          disabled={disabled}
-          title="Attach images (or paste/drop)"
-        >
-          <ImagePlus className="h-4 w-4" />
-        </button>
+        <div className="flex items-center gap-1">
+          <button
+            className="p-1.5 text-zinc-500 hover:text-zinc-300 transition-colors"
+            onClick={() => fileInputRef.current?.click()}
+            disabled={disabled}
+            title="Attach images (or paste/drop)"
+          >
+            <ImagePlus className="h-4 w-4" />
+          </button>
+          {projectPath && (
+            <button
+              className="p-1.5 text-zinc-500 hover:text-zinc-300 transition-colors"
+              onClick={triggerMention}
+              disabled={disabled}
+              title="Reference a file (@)"
+            >
+              <AtSign className="h-4 w-4" />
+            </button>
+          )}
+        </div>
         {sending && onCancel ? (
           <Button variant="destructive" size="sm" onClick={onCancel}>
             <X className="h-3.5 w-3.5 mr-1" />

@@ -123,6 +123,7 @@ export const NewSessionDialog = observer(({ store }: Props) => {
           onChange={updateMessage}
           onSubmit={handleSubmit}
           disabled={!projectPath.trim()}
+          projectPath={projectPath.trim() || undefined}
           placeholder="what would you like to work on? (paste/drop images)"
           submitLabel="start session"
           rows={4}
