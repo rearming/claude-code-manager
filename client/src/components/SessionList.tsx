@@ -41,7 +41,13 @@ export const SessionList = observer(({ store }: Props) => {
               session={session}
               isSelected={store.selectedSessionId === session.sessionId}
               status={getStatus(session.sessionId)}
+              isArchived={store.isArchived(session.sessionId)}
               onClick={() => store.selectSession(session.sessionId)}
+              onArchive={() =>
+                store.isArchived(session.sessionId)
+                  ? store.unarchiveSession(session.sessionId)
+                  : store.archiveSession(session.sessionId)
+              }
             />
           ))}
         </div>

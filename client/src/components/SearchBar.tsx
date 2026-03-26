@@ -1,5 +1,5 @@
 import { observer } from 'mobx-react-lite';
-import { Search } from 'lucide-react';
+import { Archive, Search } from 'lucide-react';
 import { Input } from '@/components/shadcn/ui/input';
 import {
   Select,
@@ -27,22 +27,35 @@ export const SearchBar = observer(({ store }: Props) => {
           className="pl-8 h-8 text-sm bg-black/50"
         />
       </div>
-      <Select
-        value={store.projectFilter}
-        onValueChange={(val) => store.setProjectFilter(val === '__all__' ? '' : val)}
-      >
-        <SelectTrigger className="w-full h-7 bg-black/50 text-sm text-zinc-300">
-          <SelectValue placeholder="all projects" />
-        </SelectTrigger>
-        <SelectContent>
-          <SelectItem value="__all__">all projects</SelectItem>
-          {store.projects.map((p) => (
-            <SelectItem key={p} value={p}>
-              {p}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
+      <div className="flex gap-2">
+        <Select
+          value={store.projectFilter}
+          onValueChange={(val) => store.setProjectFilter(val === '__all__' ? '' : val)}
+        >
+          <SelectTrigger className="flex-1 h-7 bg-black/50 text-sm text-zinc-300">
+            <SelectValue placeholder="all projects" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="__all__">all projects</SelectItem>
+            {store.projects.map((p) => (
+              <SelectItem key={p} value={p}>
+                {p}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <button
+          className={`shrink-0 h-7 px-2 rounded-md border text-sm flex items-center gap-1.5 transition-colors ${
+            store.showArchived
+              ? 'bg-zinc-700 border-zinc-600 text-zinc-200'
+              : 'bg-black/50 border-border text-zinc-500 hover:text-zinc-300 hover:border-zinc-600'
+          }`}
+          onClick={() => store.toggleShowArchived()}
+          title={store.showArchived ? 'showing archived' : 'show archived'}
+        >
+          <Archive className="h-3.5 w-3.5" />
+        </button>
+      </div>
       <Select
         value={store.sortBy}
         onValueChange={(val) => store.setSortBy(val as 'date' | 'messages' | 'project')}

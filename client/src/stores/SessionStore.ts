@@ -7,6 +7,7 @@ const SCROLL_POSITIONS_KEY = 'ccm-scroll-positions';
 const RAW_LINES_KEY = 'ccm-raw-lines';
 const TERMINAL_INPUT_KEY = 'ccm-terminal-input';
 const SELECTED_SESSION_KEY = 'ccm-selected-session';
+const ARCHIVED_SESSIONS_KEY = 'ccm-archived-sessions';
 
 interface PanelLayout {
   sidebarSize: number;    // percentage
@@ -81,6 +82,15 @@ function loadTerminalInput(): string {
   }
 }
 
+function loadArchivedSessions(): Set<string> {
+  try {
+    const raw = localStorage.getItem(ARCHIVED_SESSIONS_KEY);
+    return raw ? new Set(JSON.parse(raw)) : new Set();
+  } catch {
+    return new Set();
+  }
+}
+
 export interface StreamingToolCall {
   id?: string;
   name: string;
@@ -119,6 +129,8 @@ export class SessionStore {
   settings: Settings = loadSettings();
   scrollPositions: Record<string, { position: number; messageCount: number } | number> = loadScrollPositions();
   showSettings = false;
+  archivedSessionIds: Set<string> = loadArchivedSessions();
+  showArchived = false;
 
   constructor() {
     makeAutoObservable(this);
@@ -404,6 +416,13 @@ export class SessionStore {
   get filteredSessions(): SessionSummary[] {
     let result = this.sessions;
 
+    // Filter by archive status
+    if (this.showArchived) {
+      result = result.filter((s) => this.archivedSessionIds.has(s.sessionId));
+    } else {
+      result = result.filter((s) => !this.archivedSessionIds.has(s.sessionId));
+    }
+
     if (this.projectFilter) {
       result = result.filter((s) => s.project === this.projectFilter);
     }
@@ -455,6 +474,28 @@ export class SessionStore {
 
   setSortBy(sort: 'date' | 'messages' | 'project') {
     this.sortBy = sort;
+  }
+
+  toggleShowArchived() {
+    this.showArchived = !this.showArchived;
+  }
+
+  archiveSession(sessionId: string) {
+    this.archivedSessionIds.add(sessionId);
+    this.persistArchivedSessions();
+  }
+
+  unarchiveSession(sessionId: string) {
+    this.archivedSessionIds.delete(sessionId);
+    this.persistArchivedSessions();
+  }
+
+  isArchived(sessionId: string): boolean {
+    return this.archivedSessionIds.has(sessionId);
+  }
+
+  private persistArchivedSessions() {
+    localStorage.setItem(ARCHIVED_SESSIONS_KEY, JSON.stringify([...this.archivedSessionIds]));
   }
 
   async loadSessions() {

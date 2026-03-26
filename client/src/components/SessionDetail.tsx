@@ -31,6 +31,7 @@ export const SessionDetail = observer(({ store }: Props) => {
   const { summary, messages } = detail;
   const containerRef = useRef<HTMLDivElement>(null);
   const [showScrollButton, setShowScrollButton] = useState(false);
+  const wasNearBottomRef = useRef(true);
   const isStale = useStaleStreamDetector(store);
 
   const isNearBottom = useCallback(() => {
@@ -51,12 +52,14 @@ export const SessionDetail = observer(({ store }: Props) => {
 
     if (store.scrollToBottomOnLoad) {
       store.scrollToBottomOnLoad = false;
+      wasNearBottomRef.current = true;
       requestAnimationFrame(() => {
         el.scrollTop = el.scrollHeight;
       });
     } else {
       const saved = store.getScrollPosition(summary.sessionId);
       if (saved !== undefined && saved.messageCount < messages.length) {
+        wasNearBottomRef.current = true;
         requestAnimationFrame(() => {
           el.scrollTop = el.scrollHeight;
         });
@@ -70,20 +73,23 @@ export const SessionDetail = observer(({ store }: Props) => {
   const handleScroll = useCallback(() => {
     const el = containerRef.current;
     if (!el) return;
-    setShowScrollButton(!isNearBottom());
+    const nearBottom = isNearBottom();
+    wasNearBottomRef.current = nearBottom;
+    setShowScrollButton(!nearBottom);
     store.saveScrollPosition(summary.sessionId, el.scrollTop, messages.length);
   }, [store, summary.sessionId, isNearBottom, messages.length]);
 
   useEffect(() => {
     if (!store.sending || !store.settings.autoScrollOnNewMessages) return;
     const el = containerRef.current;
-    if (el && isNearBottom()) {
+    if (el && wasNearBottomRef.current) {
       el.scrollTop = el.scrollHeight;
     }
-  }, [store.streamingText, store.streamingToolCalls.length, store.streamingBlocks.length, store.committedStreamingMessages.length, store.sending, store.settings.autoScrollOnNewMessages, isNearBottom]);
+  }, [store.streamingText, store.streamingToolCalls.length, store.streamingBlocks.length, store.committedStreamingMessages.length, store.sending, store.settings.autoScrollOnNewMessages]);
 
   useEffect(() => {
     if (store.pendingUserMessage && store.settings.autoScrollOnNewMessages) {
+      wasNearBottomRef.current = true;
       requestAnimationFrame(() => scrollToBottom(false));
     }
   }, [store.pendingUserMessage, store.settings.autoScrollOnNewMessages, scrollToBottom]);
