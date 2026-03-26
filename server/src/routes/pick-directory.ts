@@ -62,7 +62,7 @@ if ($result -eq [System.Windows.Forms.DialogResult]::OK) {
 }
 
 function pickMac(startPath: string): Promise<string | null> {
-  const script = `choose folder default location POSIX file "${startPath}" with prompt "Select project directory"`;
+  const script = `POSIX path of (choose folder default location POSIX file "${startPath}" with prompt "Select project directory")`;
   return new Promise((resolve, reject) => {
     execFile('osascript', ['-e', script], { timeout: 120000 }, (err, stdout) => {
       if (err) {
@@ -70,14 +70,7 @@ function pickMac(startPath: string): Promise<string | null> {
         if (err.message?.includes('-128')) return resolve(null);
         return reject(err);
       }
-      // osascript returns "alias Macintosh HD:Users:..." format, convert to POSIX
-      const alias = stdout.trim();
-      if (!alias) return resolve(null);
-      // Convert alias to POSIX path
-      execFile('osascript', ['-e', `POSIX path of "${alias}"`], (err2, stdout2) => {
-        if (err2) return reject(err2);
-        resolve(stdout2.trim() || null);
-      });
+      resolve(stdout.trim() || null);
     });
   });
 }

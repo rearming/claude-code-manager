@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback, useImperativeHandle, forwardRef } from 'react';
+import { useState, useRef, useCallback, useImperativeHandle, forwardRef, useEffect } from 'react';
 import { Send, X, ImagePlus } from 'lucide-react';
 import { Button } from '@/components/shadcn/ui/button';
 import type { ImageAttachment } from '../types';
@@ -114,13 +114,66 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
 
   const canSubmit = (value.trim() || images.length > 0) && !sending && !disabled;
 
+  const STORAGE_KEY = 'chat-input-height';
+  const [height, setHeight] = useState<number | null>(() => {
+    const saved = localStorage.getItem(STORAGE_KEY);
+    return saved ? Number(saved) : null;
+  });
+  const dragHandleRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handle = dragHandleRef.current;
+    if (!handle) return;
+
+    let startY = 0;
+    let startHeight = 0;
+
+    const onMouseMove = (e: MouseEvent) => {
+      const delta = startY - e.clientY;
+      const newHeight = Math.max(80, startHeight + delta);
+      setHeight(newHeight);
+      localStorage.setItem(STORAGE_KEY, String(newHeight));
+    };
+
+    const onMouseUp = () => {
+      document.removeEventListener('mousemove', onMouseMove);
+      document.removeEventListener('mouseup', onMouseUp);
+      document.body.style.userSelect = '';
+      document.body.style.cursor = '';
+    };
+
+    const onMouseDown = (e: MouseEvent) => {
+      e.preventDefault();
+      startY = e.clientY;
+      startHeight = handle.parentElement?.offsetHeight ?? 120;
+      document.body.style.userSelect = 'none';
+      document.body.style.cursor = 'ns-resize';
+      document.addEventListener('mousemove', onMouseMove);
+      document.addEventListener('mouseup', onMouseUp);
+    };
+
+    handle.addEventListener('mousedown', onMouseDown);
+    return () => {
+      handle.removeEventListener('mousedown', onMouseDown);
+      document.removeEventListener('mousemove', onMouseMove);
+      document.removeEventListener('mouseup', onMouseUp);
+    };
+  }, []);
+
   return (
     <div
-      className={`border border-input rounded-none ${dragOver ? 'bg-zinc-800/50 border-zinc-500' : 'bg-black/50'}`}
+      className={`flex flex-col border border-input rounded-none ${dragOver ? 'bg-zinc-800/50 border-zinc-500' : 'bg-black/50'}`}
+      style={height ? { height } : undefined}
       onDrop={handleDrop}
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
     >
+      <div
+        ref={dragHandleRef}
+        className="flex items-center justify-center h-2 cursor-ns-resize group hover:bg-zinc-700/50 transition-colors"
+      >
+        <div className="w-10 h-0.5 bg-zinc-600 group-hover:bg-zinc-400 transition-colors" />
+      </div>
       <input
         ref={fileInputRef}
         type="file"
@@ -155,7 +208,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
       )}
       <textarea
         ref={textareaRef}
-        className="w-full bg-transparent text-sm text-zinc-300 px-3 py-2 resize-none focus:outline-none placeholder:text-zinc-600 font-[inherit]"
+        className="w-full flex-1 min-h-0 bg-transparent text-sm text-zinc-300 px-3 py-2 resize-none focus:outline-none placeholder:text-zinc-600 font-[inherit]"
         placeholder={placeholder}
         value={value}
         onChange={(e) => onChange(e.target.value)}

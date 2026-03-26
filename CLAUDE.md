@@ -47,6 +47,7 @@ Fork conversations — Branch off at any message to explore a different directio
 - all buttons: `cursor-pointer`, `focus:ring-0`, `disabled:opacity-65`
 - dialog overlay: `bg-black/80`, z-250
 - tooltip: `bg-zinc-900/95 text-xs`, z-500
+- **stateful UI** - user-adjustable UI state (sizes, positions, toggles, preferences) must persist across page reloads via `localStorage`
 
 ## code style
 
