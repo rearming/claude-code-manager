@@ -204,6 +204,8 @@ export async function listSessions(): Promise<SessionSummary[]> {
 
     for (const file of files) {
       if (!file.endsWith('.jsonl')) continue;
+      // Skip subagent files (agent-*.jsonl) — they are not standalone sessions
+      if (file.startsWith('agent-')) continue;
       const sessionId = file.replace('.jsonl', '');
       const filePath = path.join(projPath, file);
 
@@ -442,13 +444,11 @@ export async function getSessionDetail(sessionId: string): Promise<SessionDetail
   }
 
   // Enrich non-sidechain assistant messages with tool calls from sidechain (subagent) messages.
-  // Walk messages in order: collect sidechain tool calls and attach them to the closest
-  // preceding non-sidechain assistant message that has an Agent tool call.
+  // First try: inline sidechain messages (old format, stored in main JSONL).
   let lastAgentMessage: ConversationMessage | null = null;
   for (const msg of messages) {
     if (!msg.isSidechain && msg.type === 'assistant') {
-      // Check if this message has an Agent tool call
-      if (msg.toolCalls?.some((tc) => tc.name === 'Agent')) {
+      if (msg.toolCalls?.some((tc) => tc.name === 'Agent' || tc.name === 'Task')) {
         lastAgentMessage = msg;
       } else {
         lastAgentMessage = null;
@@ -457,6 +457,95 @@ export async function getSessionDetail(sessionId: string): Promise<SessionDetail
       if (!lastAgentMessage.subagentToolCalls) lastAgentMessage.subagentToolCalls = [];
       lastAgentMessage.subagentToolCalls.push(...msg.toolCalls);
     }
+  }
+
+  // Second: load subagent files from {sessionId}/subagents/ directory (new format).
+  const subagentsDir = path.join(path.dirname(sessionFile), sessionId, 'subagents');
+  try {
+    const subFiles = await fs.promises.readdir(subagentsDir);
+
+    // Build map: description -> subagent tool calls
+    const subagentMap = new Map<string, ToolCallSummary[]>();
+
+    for (const file of subFiles) {
+      if (!file.endsWith('.jsonl')) continue;
+      const agentName = file.replace('.jsonl', '');
+
+      // Try to get description from meta.json
+      let description = '';
+      try {
+        const metaPath = path.join(subagentsDir, `${agentName}.meta.json`);
+        const metaContent = await fs.promises.readFile(metaPath, 'utf8');
+        const meta = JSON.parse(metaContent);
+        description = meta.description || '';
+      } catch {
+        // No meta file — will try prompt matching below
+      }
+
+      // Parse subagent JSONL for tool calls and first user prompt
+      const subToolCalls: ToolCallSummary[] = [];
+      let firstPrompt = '';
+
+      const subStream = fs.createReadStream(path.join(subagentsDir, file), { encoding: 'utf8' });
+      const subRl = readline.createInterface({ input: subStream, crlfDelay: Infinity });
+      for await (const line of subRl) {
+        if (!line.trim()) continue;
+        try {
+          const entry = JSON.parse(line);
+          // Capture first user message content for prompt matching
+          if (entry.type === 'user' && !firstPrompt) {
+            const content = entry.message?.content;
+            firstPrompt = typeof content === 'string'
+              ? content
+              : Array.isArray(content)
+                ? content.filter((c: Record<string, unknown>) => c.type === 'text').map((c: Record<string, unknown>) => c.text).join('\n')
+                : '';
+          }
+          // Collect assistant tool calls
+          if (entry.type === 'assistant') {
+            const contentArr = entry.message?.content;
+            if (Array.isArray(contentArr)) {
+              for (const block of contentArr) {
+                if (block.type === 'tool_use') {
+                  subToolCalls.push({
+                    name: block.name,
+                    input: typeof block.input === 'string' ? { raw: block.input } : block.input,
+                  });
+                }
+              }
+            }
+          }
+        } catch {
+          // Skip malformed lines
+        }
+      }
+
+      if (subToolCalls.length > 0) {
+        // Key by description or prompt for matching
+        const key = description || firstPrompt;
+        if (key) subagentMap.set(key, subToolCalls);
+      }
+    }
+
+    // Match Agent tool calls to subagent data
+    for (const msg of messages) {
+      if (msg.isSidechain || msg.type !== 'assistant' || !msg.toolCalls) continue;
+      for (const tc of msg.toolCalls) {
+        if (tc.name !== 'Agent' && tc.name !== 'Task') continue;
+        const desc = tc.input.description as string || '';
+        const prompt = tc.input.prompt as string || '';
+        // Match by description first, then by prompt
+        const matched = subagentMap.get(desc) || subagentMap.get(prompt);
+        if (matched) {
+          if (!msg.subagentToolCalls) msg.subagentToolCalls = [];
+          msg.subagentToolCalls.push(...matched);
+          // Remove from map so each subagent is matched only once
+          subagentMap.delete(desc || prompt);
+        }
+      }
+    }
+  } catch {
+    // No subagents directory — skip
   }
 
   const mainMessages = messages.filter((m) => !m.isSidechain);

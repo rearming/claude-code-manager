@@ -265,13 +265,18 @@ export class SessionStore {
     this.persistTabs();
   }
 
-  /** Move a tab from one index to another (drag-to-reorder) */
-  moveTab(fromIndex: number, toIndex: number) {
-    if (fromIndex === toIndex) return;
-    if (fromIndex < 0 || fromIndex >= this.tabs.length) return;
-    if (toIndex < 0 || toIndex >= this.tabs.length) return;
-    const [tab] = this.tabs.splice(fromIndex, 1);
-    this.tabs.splice(toIndex, 0, tab);
+  /** Move a tab before another tab (drag-to-reorder). Works correctly even when some tabs are minimized. */
+  moveTab(fromTabId: string, beforeTabId: string) {
+    if (fromTabId === beforeTabId) return;
+    const fromIdx = this.tabs.findIndex(t => t.tabId === fromTabId);
+    if (fromIdx < 0) return;
+    const [tab] = this.tabs.splice(fromIdx, 1);
+    const toIdx = this.tabs.findIndex(t => t.tabId === beforeTabId);
+    if (toIdx < 0) {
+      this.tabs.push(tab);
+    } else {
+      this.tabs.splice(toIdx, 0, tab);
+    }
     this.persistTabs();
   }
 

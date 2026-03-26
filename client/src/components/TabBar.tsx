@@ -15,7 +15,6 @@ export const TabBar = observer(({ store }: Props) => {
   const visibleTabs = store.visibleTabs;
   const [dragTabId, setDragTabId] = useState<string | null>(null);
   const [dropTargetId, setDropTargetId] = useState<string | null>(null);
-  const dragStartIndex = useRef<number>(-1);
 
   // Inline rename state
   const [editingTabId, setEditingTabId] = useState<string | null>(null);
@@ -32,10 +31,9 @@ export const TabBar = observer(({ store }: Props) => {
     }
   }, [editingTabId]);
 
-  const handleDragStart = useCallback((e: React.DragEvent, tabId: string, index: number) => {
+  const handleDragStart = useCallback((e: React.DragEvent, tabId: string) => {
     if (editingTabId) return;
     setDragTabId(tabId);
-    dragStartIndex.current = index;
     e.dataTransfer.effectAllowed = 'move';
     e.dataTransfer.setData('text/plain', tabId);
   }, [editingTabId]);
@@ -46,20 +44,18 @@ export const TabBar = observer(({ store }: Props) => {
     setDropTargetId(tabId);
   }, []);
 
-  const handleDrop = useCallback((e: React.DragEvent, _tabId: string, dropIndex: number) => {
+  const handleDrop = useCallback((e: React.DragEvent, targetTabId: string) => {
     e.preventDefault();
-    if (dragStartIndex.current >= 0 && dragStartIndex.current !== dropIndex) {
-      store.moveTab(dragStartIndex.current, dropIndex);
+    if (dragTabId && dragTabId !== targetTabId) {
+      store.moveTab(dragTabId, targetTabId);
     }
     setDragTabId(null);
     setDropTargetId(null);
-    dragStartIndex.current = -1;
-  }, [store]);
+  }, [store, dragTabId]);
 
   const handleDragEnd = useCallback(() => {
     setDragTabId(null);
     setDropTargetId(null);
-    dragStartIndex.current = -1;
   }, []);
 
   // Rename handlers
@@ -115,7 +111,7 @@ export const TabBar = observer(({ store }: Props) => {
   return (
     <div className="flex items-center border-b border-border bg-zinc-900/60 overflow-x-auto">
       <div className="flex items-center min-w-0 flex-1">
-        {visibleTabs.map((tab, index) => {
+        {visibleTabs.map((tab) => {
           const isActive = tab.tabId === store.activeTabId;
           const isStreaming = tab.sending;
           const isDragging = dragTabId === tab.tabId;
@@ -127,9 +123,9 @@ export const TabBar = observer(({ store }: Props) => {
             <div
               key={tab.tabId}
               draggable={!isEditing}
-              onDragStart={(e) => handleDragStart(e, tab.tabId, index)}
+              onDragStart={(e) => handleDragStart(e, tab.tabId)}
               onDragOver={(e) => handleDragOver(e, tab.tabId)}
-              onDrop={(e) => handleDrop(e, tab.tabId, index)}
+              onDrop={(e) => handleDrop(e, tab.tabId)}
               onDragEnd={handleDragEnd}
               className={`group relative flex items-center gap-1.5 px-3 py-1.5 text-xs cursor-pointer border-r border-border transition-all min-w-0 select-none ${
                 isActive

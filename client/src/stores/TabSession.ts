@@ -367,7 +367,10 @@ export class TabSession {
     const abort = streamNewSession(message, projectPath, this._getDangerouslySkipPermissions(), {
       images: images,
       onInit: (data) => {
-        runInAction(() => { this.sessionId = data.sessionId; });
+        runInAction(() => {
+          this.sessionId = data.sessionId;
+          this._onSessionsChanged();
+        });
       },
       onText: (text) => { runInAction(() => { this.streamingText += text; }); },
       onRaw: (data) => { runInAction(() => { this.appendRawLine(data); }); },
