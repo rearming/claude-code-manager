@@ -9,6 +9,7 @@ import {
   SelectValue,
 } from '@/components/shadcn/ui/select';
 import type { SessionStore } from '../stores/SessionStore';
+import { Button } from './shadcn/ui/button';
 
 interface Props {
   store: SessionStore;
@@ -44,17 +45,15 @@ export const SearchBar = observer(({ store }: Props) => {
             ))}
           </SelectContent>
         </Select>
-        <button
-          className={`shrink-0 h-7 px-2 rounded-md border text-sm flex items-center gap-1.5 transition-colors ${
-            store.showArchived
-              ? 'bg-zinc-700 border-zinc-600 text-zinc-200'
-              : 'bg-black/50 border-border text-zinc-500 hover:text-zinc-300 hover:border-zinc-600'
-          }`}
+        <Button
+          variant={store.showArchived ? "default" : "outline"}
+          size="sm"
+          className={`shrink-0 h-7 px-2 text-sm flex items-center gap-1.5 bg-black/50 border-zinc-600 text-zinc-500 hover:text-zinc-300 hover:border-zinc-600 focus:ring-0 rounded-none lowercase`}
           onClick={() => store.toggleShowArchived()}
           title={store.showArchived ? 'showing archived' : 'show archived'}
         >
           <Archive className="h-3.5 w-3.5" />
-        </button>
+        </Button>
       </div>
       <Select
         value={store.sortBy}
