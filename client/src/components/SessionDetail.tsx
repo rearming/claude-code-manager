@@ -4,7 +4,7 @@ import Markdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import rehypeHighlight from 'rehype-highlight';
 import 'highlight.js/styles/github-dark.min.css';
-import { GitFork, Copy, ChevronDown, ChevronRight, ArrowDown, X, Pencil, Download, ClipboardCopy, MessageSquarePlus } from 'lucide-react';
+import { GitFork, Copy, ChevronDown, ChevronRight, ArrowDown, X, Pencil, Download, ClipboardCopy, MessageSquarePlus, Brain } from 'lucide-react';
 import { Button } from '@/components/shadcn/ui/button';
 import {
   Dialog,
@@ -424,6 +424,7 @@ function MessageBubble({ message, messageIndex, totalMessages, onFork, onInsertI
   const [annotating, setAnnotating] = useState(false);
   const [annotatedSrc, setAnnotatedSrc] = useState<string | null>(null);
   const [annotationCommands, setAnnotationCommands] = useState<DrawCommand[]>([]);
+  const [showThinking, setShowThinking] = useState(false);
   const isUser = message.type === 'user';
 
   const showTools = localExpand !== null ? localExpand : globalExpand;
@@ -627,6 +628,27 @@ function MessageBubble({ message, messageIndex, totalMessages, onFork, onInsertI
           </div>
         )}
       </div>
+
+      {/* thinking */}
+      {message.thinking && (
+        <div className="mt-3 border-t border-zinc-800 pt-2">
+          <button
+            className={`text-xs flex items-center gap-1 px-2 py-0.5 border transition-colors ${
+              showThinking ? 'border-zinc-600 text-zinc-300 bg-zinc-800' : 'border-border text-zinc-500 hover:text-zinc-300'
+            }`}
+            onClick={() => setShowThinking(!showThinking)}
+          >
+            {showThinking ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
+            <Brain className="h-3 w-3" />
+            thinking
+          </button>
+          {showThinking && (
+            <div className="mt-2 border border-zinc-800 bg-black/30 px-3 py-2">
+              <pre className="text-xs text-zinc-400 whitespace-pre-wrap break-words font-[--font-mono]">{message.thinking}</pre>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* tool calls */}
       {message.toolCalls && message.toolCalls.length > 0 && (

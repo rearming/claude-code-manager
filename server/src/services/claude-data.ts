@@ -333,6 +333,8 @@ export async function getSessionDetail(sessionId: string): Promise<SessionDetail
     const stream = fs.createReadStream(sessionFile, { encoding: 'utf8' });
     const rl = readline.createInterface({ input: stream, crlfDelay: Infinity });
 
+    let pendingThinking: string[] = [];
+
     for await (const line of rl) {
       if (!line.trim()) continue;
       try {
@@ -387,10 +389,13 @@ export async function getSessionDetail(sessionId: string): Promise<SessionDetail
           if (!Array.isArray(contentArr)) continue;
 
           const textParts: string[] = [];
+          const thinkingParts: string[] = [];
           const toolCalls: ToolCallSummary[] = [];
 
           for (const block of contentArr) {
-            if (block.type === 'text' && block.text) {
+            if (block.type === 'thinking' && block.thinking) {
+              thinkingParts.push(block.thinking);
+            } else if (block.type === 'text' && block.text) {
               textParts.push(block.text);
             } else if (block.type === 'tool_use') {
               toolCalls.push({
@@ -402,8 +407,19 @@ export async function getSessionDetail(sessionId: string): Promise<SessionDetail
             }
           }
 
+          // Thinking-only messages: accumulate for next assistant message
+          if (thinkingParts.length > 0 && !textParts.length && toolCalls.length === 0) {
+            pendingThinking.push(...thinkingParts);
+            continue;
+          }
+
           const text = textParts.join('\n');
           if (!text && toolCalls.length === 0) continue;
+
+          // Merge any inline thinking + accumulated pending thinking
+          const allThinking = [...pendingThinking, ...thinkingParts];
+          pendingThinking = [];
+          const thinking = allThinking.join('\n');
 
           messages.push({
             uuid: entry.uuid,
@@ -411,6 +427,7 @@ export async function getSessionDetail(sessionId: string): Promise<SessionDetail
             type: 'assistant',
             timestamp: entry.timestamp,
             content: text,
+            thinking: thinking || undefined,
             model: entry.message?.model,
             toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
             isSidechain: entry.isSidechain || false,
