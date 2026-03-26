@@ -161,14 +161,14 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
         onChange={(e) => onChange(e.target.value)}
         onKeyDown={handleKeyDown}
         onPaste={handlePaste}
-        disabled={sending || disabled}
+        disabled={disabled}
         rows={rows}
       />
       <div className="flex items-center justify-between px-2 pb-2">
         <button
           className="p-1.5 text-zinc-500 hover:text-zinc-300 transition-colors"
           onClick={() => fileInputRef.current?.click()}
-          disabled={sending || disabled}
+          disabled={disabled}
           title="Attach images (or paste/drop)"
         >
           <ImagePlus className="h-4 w-4" />

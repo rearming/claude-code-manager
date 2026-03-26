@@ -8,19 +8,23 @@ import { Button } from '@/components/shadcn/ui/button';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/shadcn/ui/tooltip';
 import { ResizablePanelGroup, ResizablePanel, ResizableHandle, usePanelRef } from '@/components/shadcn/ui/resizable';
 import type { SessionStore } from '../stores/SessionStore';
+import type { TabSession } from '../stores/TabSession';
 import { SearchBar } from './SearchBar';
 import { SessionList } from './SessionList';
 import { SessionDetail } from './SessionDetail';
 import { SettingsPanel } from './SettingsPanel';
 import { NewSessionDialog } from './NewSessionDialog';
 import { TerminalPanel } from './TerminalPanel';
+import { TabBar } from './TabBar';
+import { TabTray } from './TabTray';
 
 interface Props {
   store: SessionStore;
 }
 
 export const Layout = observer(({ store }: Props) => {
-  const showNewSessionStreaming = !store.selectedDetail && !!(store.sending || store.streamingText);
+  const activeTab = store.activeTab;
+  const showNewSessionStreaming = activeTab && !activeTab.selectedDetail && !!(activeTab.sending || activeTab.streamingText);
   const sidebarPanelRef = usePanelRef();
   const chatPanelRef = usePanelRef();
   const terminalPanelRef = usePanelRef();
@@ -67,16 +71,29 @@ export const Layout = observer(({ store }: Props) => {
     else panel.collapse();
   }, [terminalPanelRef]);
 
-  // When terminal is hidden, sidebar+chat split the full width
-  // Normalize to 2-panel percentages from stored 3-panel values
   const sidebarPctNoTerminal = layout.sidebarSize / (layout.sidebarSize + layout.chatSize) * 100;
   const chatPctNoTerminal = layout.chatSize / (layout.sidebarSize + layout.chatSize) * 100;
+
+  const chatPanel = (
+    <div className="flex-1 flex flex-col min-w-0 h-full">
+      <TabBar store={store} />
+      <main className="flex-1 overflow-hidden">
+        <MainContent store={store} activeTab={activeTab} showNewSessionStreaming={!!showNewSessionStreaming} />
+      </main>
+      <BottomToolbar
+        store={store}
+        showTerminal={store.showTerminal}
+        toggleSidebarCollapse={toggleSidebarCollapse}
+        toggleChatCollapse={store.showTerminal ? toggleChatCollapse : undefined}
+        toggleTerminalCollapse={store.showTerminal ? toggleTerminalCollapse : undefined}
+      />
+    </div>
+  );
 
   return (
     <TooltipProvider>
       <div className="flex h-screen overflow-hidden">
         {store.showTerminal ? (
-          /* 3-panel layout: sidebar | chat | terminal */
           <ResizablePanelGroup
             orientation="horizontal"
             onLayoutChanged={handleLayoutChanged}
@@ -106,18 +123,7 @@ export const Layout = observer(({ store }: Props) => {
               onResize={handleChatResize}
               className="flex flex-col min-w-0"
             >
-              <div className="flex-1 flex flex-col min-w-0 h-full">
-                <main className="flex-1 overflow-hidden">
-                  <MainContent store={store} showNewSessionStreaming={showNewSessionStreaming} />
-                </main>
-                <BottomToolbar
-                  store={store}
-                  showTerminal
-                  toggleSidebarCollapse={toggleSidebarCollapse}
-                  toggleChatCollapse={toggleChatCollapse}
-                  toggleTerminalCollapse={toggleTerminalCollapse}
-                />
-              </div>
+              {chatPanel}
             </ResizablePanel>
 
             <ResizableHandle withHandle />
@@ -132,11 +138,10 @@ export const Layout = observer(({ store }: Props) => {
               onResize={handleTerminalResize}
               className="flex flex-col min-w-0"
             >
-              <TerminalPanel store={store} />
+              <TerminalPanel store={store} tab={activeTab} />
             </ResizablePanel>
           </ResizablePanelGroup>
         ) : (
-          /* 2-panel layout: sidebar | chat */
           <ResizablePanelGroup
             orientation="horizontal"
             onLayoutChanged={(layoutMap) => {
@@ -171,17 +176,7 @@ export const Layout = observer(({ store }: Props) => {
               onResize={handleChatResize}
               className="flex flex-col min-w-0"
             >
-              <div className="flex-1 flex flex-col min-w-0 h-full">
-                <main className="flex-1 overflow-hidden">
-                  <MainContent store={store} showNewSessionStreaming={showNewSessionStreaming} />
-                </main>
-                <BottomToolbar
-                  store={store}
-                  showTerminal={false}
-                  toggleSidebarCollapse={toggleSidebarCollapse}
-                  toggleChatCollapse={toggleChatCollapse}
-                />
-              </div>
+              {chatPanel}
             </ResizablePanel>
           </ResizablePanelGroup>
         )}
@@ -233,10 +228,10 @@ const Sidebar = observer(({ store }: { store: SessionStore }) => (
   </aside>
 ));
 
-const MainContent = observer(({ store, showNewSessionStreaming }: { store: SessionStore; showNewSessionStreaming: boolean }) => {
-  if (store.selectedDetail) return <SessionDetail store={store} />;
-  if (showNewSessionStreaming) return <NewSessionStreamingView store={store} />;
-  if (store.detailLoading) return <div className="flex items-center justify-center h-full text-zinc-500">loading conversation...</div>;
+const MainContent = observer(({ store, activeTab, showNewSessionStreaming }: { store: SessionStore; activeTab: TabSession | null; showNewSessionStreaming: boolean }) => {
+  if (activeTab?.selectedDetail) return <SessionDetail key={activeTab.tabId} store={store} tab={activeTab} />;
+  if (activeTab && showNewSessionStreaming) return <NewSessionStreamingView key={activeTab.tabId} store={store} tab={activeTab} />;
+  if (activeTab?.detailLoading) return <div className="flex items-center justify-center h-full text-zinc-500">loading conversation...</div>;
   return <EmptyState />;
 });
 
@@ -252,12 +247,13 @@ interface BottomToolbarProps {
   store: SessionStore;
   showTerminal: boolean;
   toggleSidebarCollapse: () => void;
-  toggleChatCollapse: () => void;
+  toggleChatCollapse?: () => void;
   toggleTerminalCollapse?: () => void;
 }
 
 const BottomToolbar = observer(({ store, showTerminal, toggleSidebarCollapse, toggleChatCollapse, toggleTerminalCollapse }: BottomToolbarProps) => {
   const { sidebarCollapsed, chatCollapsed, terminalCollapsed } = store.panelLayout;
+  const activeTab = store.activeTab;
 
   return (
     <div className="px-4 py-2 border-t border-border bg-secondary flex items-center justify-between text-xs">
@@ -306,13 +302,14 @@ const BottomToolbar = observer(({ store, showTerminal, toggleSidebarCollapse, to
             <TooltipContent>{terminalCollapsed ? 'expand terminal' : 'collapse terminal'}</TooltipContent>
           </Tooltip>
         )}
+        <TabTray store={store} />
       </div>
       <div className="text-zinc-500">
-        {store.selectedDetail && (
+        {activeTab?.selectedDetail && (
           <span>
-            {store.selectedDetail.messages.length} messages
-            {store.selectedDetail.messages.reduce((sum, m) => sum + (m.toolCalls?.length || 0), 0) > 0 &&
-              ` · ${store.selectedDetail.messages.reduce((sum, m) => sum + (m.toolCalls?.length || 0), 0)} tool calls`
+            {activeTab.selectedDetail.messages.length} messages
+            {activeTab.selectedDetail.messages.reduce((sum, m) => sum + (m.toolCalls?.length || 0), 0) > 0 &&
+              ` · ${activeTab.selectedDetail.messages.reduce((sum, m) => sum + (m.toolCalls?.length || 0), 0)} tool calls`
             }
           </span>
         )}
@@ -321,25 +318,24 @@ const BottomToolbar = observer(({ store, showTerminal, toggleSidebarCollapse, to
   );
 });
 
-const NewSessionStreamingView = observer(({ store }: { store: SessionStore }) => (
+const NewSessionStreamingView = observer(({ store, tab }: { store: SessionStore; tab: TabSession }) => (
   <div className="flex flex-col h-full">
     <div className="px-5 py-4 border-b border-border">
       <h2 className="text-lg text-zinc-200">new session</h2>
       <span className="text-sm text-zinc-500">starting...</span>
     </div>
     <div className="flex-1 overflow-y-auto p-4">
-      {store.pendingUserMessage && (
+      {tab.pendingUserMessage && (
         <div className="mb-4 p-4 border border-border bg-user-bg">
           <div className="flex items-center gap-2 mb-2">
             <span className="text-xs font-bold text-zinc-300 uppercase tracking-wide">you</span>
             <span className="text-xs text-zinc-500">just now</span>
           </div>
-          <div className="text-sm text-zinc-300">{store.pendingUserMessage}</div>
+          <div className="text-sm text-zinc-300">{tab.pendingUserMessage}</div>
         </div>
       )}
 
-      {/* Committed messages from completed turns */}
-      {store.committedStreamingMessages.map((msg) => (
+      {tab.committedStreamingMessages.map((msg) => (
         <div key={msg.uuid} className="p-4 border border-border bg-assistant-bg mb-3">
           <div className="flex items-center gap-2 mb-2">
             <span className="text-xs font-bold text-zinc-300 uppercase tracking-wide">claude</span>
@@ -364,8 +360,7 @@ const NewSessionStreamingView = observer(({ store }: { store: SessionStore }) =>
         </div>
       ))}
 
-      {/* Current streaming turn */}
-      {store.streamingText ? (
+      {tab.streamingText ? (
         <div className="p-4 border border-border bg-assistant-bg">
           <div className="flex items-center gap-2 mb-2">
             <span className="text-xs font-bold text-zinc-300 uppercase tracking-wide">claude</span>
@@ -373,11 +368,11 @@ const NewSessionStreamingView = observer(({ store }: { store: SessionStore }) =>
           </div>
           <div className="text-sm text-zinc-300 markdown-body">
             <Markdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeHighlight]}>
-              {store.streamingText}
+              {tab.streamingText}
             </Markdown>
           </div>
         </div>
-      ) : store.streamingToolCalls.length === 0 && store.committedStreamingMessages.length === 0 ? (
+      ) : tab.streamingToolCalls.length === 0 && tab.committedStreamingMessages.length === 0 ? (
         <div className="p-4 border border-border bg-assistant-bg">
           <div className="flex items-center gap-2 mb-2">
             <span className="text-xs font-bold text-zinc-300 uppercase tracking-wide">claude</span>
@@ -386,14 +381,14 @@ const NewSessionStreamingView = observer(({ store }: { store: SessionStore }) =>
           <div className="text-sm text-zinc-500">waiting for response...</div>
         </div>
       ) : null}
-      {store.sending && store.streamingToolCalls.length > 0 && (
+      {tab.sending && tab.streamingToolCalls.length > 0 && (
         <div className="p-4 border border-border bg-assistant-bg mt-3">
           <div className="flex items-center gap-2 mb-2">
             <span className="text-xs font-bold text-zinc-300 uppercase tracking-wide">tool calls</span>
-            <span className="text-xs text-zinc-500">{store.streamingToolCalls.filter(tc => tc.status === 'running').length} running</span>
+            <span className="text-xs text-zinc-500">{tab.streamingToolCalls.filter(tc => tc.status === 'running').length} running</span>
           </div>
           <div className="flex flex-wrap gap-1.5">
-            {store.streamingToolCalls.map((tc, i) => (
+            {tab.streamingToolCalls.map((tc, i) => (
               <span
                 key={tc.id || i}
                 className={`inline-flex items-center gap-1.5 text-xs border px-2 py-1 ${
@@ -413,7 +408,7 @@ const NewSessionStreamingView = observer(({ store }: { store: SessionStore }) =>
       )}
     </div>
     <div className="p-3 border-t border-border">
-      <Button variant="destructive" onClick={() => store.cancelSend()}>cancel</Button>
+      <Button variant="destructive" onClick={() => tab.cancelSend()}>cancel</Button>
     </div>
   </div>
 ));

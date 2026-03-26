@@ -17,22 +17,23 @@ import { ChatInput } from './ChatInput';
 import type { ChatInputHandle } from './ChatInput';
 import type { DrawCommand } from './AnnotationCanvas';
 import { cacheImage, saveAnnotatedImage } from '../api';
-import type { SessionStore, StreamingToolCall, StreamingBlock } from '../stores/SessionStore';
+import type { SessionStore, StreamingToolCall, StreamingBlock, TabSession } from '../stores/SessionStore';
 import type { ConversationMessage, ToolCallSummary, ImageAttachment } from '../types';
 
 interface Props {
   store: SessionStore;
+  tab: TabSession;
 }
 
-export const SessionDetail = observer(({ store }: Props) => {
-  const detail = store.selectedDetail;
+export const SessionDetail = observer(({ store, tab }: Props) => {
+  const detail = tab.selectedDetail;
   if (!detail) return null;
 
   const { summary, messages } = detail;
   const containerRef = useRef<HTMLDivElement>(null);
   const [showScrollButton, setShowScrollButton] = useState(false);
   const wasNearBottomRef = useRef(true);
-  const isStale = useStaleStreamDetector(store);
+  const isStale = useStaleStreamDetector(tab);
 
   const isNearBottom = useCallback(() => {
     const el = containerRef.current;
@@ -50,8 +51,8 @@ export const SessionDetail = observer(({ store }: Props) => {
     const el = containerRef.current;
     if (!el || messages.length === 0) return;
 
-    if (store.scrollToBottomOnLoad) {
-      store.scrollToBottomOnLoad = false;
+    if (tab.scrollToBottomOnLoad) {
+      tab.scrollToBottomOnLoad = false;
       wasNearBottomRef.current = true;
       requestAnimationFrame(() => {
         el.scrollTop = el.scrollHeight;
@@ -80,24 +81,24 @@ export const SessionDetail = observer(({ store }: Props) => {
   }, [store, summary.sessionId, isNearBottom, messages.length]);
 
   useEffect(() => {
-    if (!store.sending || !store.settings.autoScrollOnNewMessages) return;
+    if (!tab.sending || !store.settings.autoScrollOnNewMessages) return;
     const el = containerRef.current;
     if (el && wasNearBottomRef.current) {
       el.scrollTop = el.scrollHeight;
     }
-  }, [store.streamingText, store.streamingToolCalls.length, store.streamingBlocks.length, store.committedStreamingMessages.length, store.sending, store.settings.autoScrollOnNewMessages]);
+  }, [tab.streamingText, tab.streamingToolCalls.length, tab.streamingBlocks.length, tab.committedStreamingMessages.length, tab.sending, store.settings.autoScrollOnNewMessages]);
 
   useEffect(() => {
-    if (store.pendingUserMessage && store.settings.autoScrollOnNewMessages) {
+    if (tab.pendingUserMessage && store.settings.autoScrollOnNewMessages) {
       wasNearBottomRef.current = true;
       requestAnimationFrame(() => scrollToBottom(false));
     }
-  }, [store.pendingUserMessage, store.settings.autoScrollOnNewMessages, scrollToBottom]);
+  }, [tab.pendingUserMessage, store.settings.autoScrollOnNewMessages, scrollToBottom]);
 
   const messageInputRef = useRef<ChatInputHandle>(null);
 
   const handleResume = async () => {
-    await store.resume(summary.sessionId);
+    await tab.resume(summary.sessionId);
   };
 
   const handleCopy = (text: string) => {
@@ -109,14 +110,14 @@ export const SessionDetail = observer(({ store }: Props) => {
   };
 
   const handleFork = async (messageUuid: string) => {
-    await store.forkFromMessage(summary.sessionId, messageUuid);
+    await tab.forkFromMessage(summary.sessionId, messageUuid);
   };
 
   return (
     <div className="flex flex-col h-full">
       {/* header */}
       <div className="px-5 py-3 border-b border-border flex items-start gap-3">
-        <Button size="sm" variant="ghost" onClick={() => store.clearSelection()}>
+        <Button size="sm" variant="ghost" onClick={() => store.closeTab(tab.tabId)}>
           <ArrowLeft className="h-4 w-4" />
         </Button>
         <div className="flex-1 min-w-0">
@@ -131,7 +132,7 @@ export const SessionDetail = observer(({ store }: Props) => {
             {summary.forkedFrom && (
               <span
                 className="text-zinc-400 cursor-pointer hover:text-zinc-200 transition-colors"
-                onClick={() => store.selectSession(summary.forkedFrom!.sessionId)}
+                onClick={() => store.openTab(summary.forkedFrom!.sessionId)}
               >
                 <GitFork className="h-3 w-3 inline mr-0.5" />
                 forked from {summary.forkedFrom.sessionId.slice(0, 8)}...
@@ -141,10 +142,10 @@ export const SessionDetail = observer(({ store }: Props) => {
         </div>
         <div className="flex items-center gap-2">
           <Button size="sm" variant="outline" onClick={handleResume}>resume session</Button>
-          {store.resumeCommand && (
+          {tab.resumeCommand && (
             <div className="flex items-center gap-1 border border-border px-2 py-1">
-              <code className="text-xs text-zinc-400 font-[--font-mono]">{store.resumeCommand}</code>
-              <button className="text-zinc-500 hover:text-zinc-200 transition-colors" onClick={() => handleCopy(store.resumeCommand!)}>
+              <code className="text-xs text-zinc-400 font-[--font-mono]">{tab.resumeCommand}</code>
+              <button className="text-zinc-500 hover:text-zinc-200 transition-colors" onClick={() => handleCopy(tab.resumeCommand!)}>
                 <Copy className="h-3 w-3" />
               </button>
             </div>
@@ -153,32 +154,32 @@ export const SessionDetail = observer(({ store }: Props) => {
       </div>
 
       {/* fork banner */}
-      {store.forkResult && (
+      {tab.forkResult && (
         <div className="px-5 py-3 bg-zinc-900 border-b border-border flex items-center gap-3">
           <GitFork className="h-4 w-4 text-zinc-400 shrink-0" />
           <div className="flex-1 text-sm">
             <strong className="text-zinc-200">fork created!</strong>{' '}
-            <span className="text-zinc-400">new session with {store.forkResult.messagesCopied} messages copied.</span>
+            <span className="text-zinc-400">new session with {tab.forkResult.messagesCopied} messages copied.</span>
           </div>
           <div className="flex items-center gap-2">
             <div className="flex items-center gap-1 border border-border px-2 py-1">
-              <code className="text-xs text-zinc-400 font-[--font-mono]">{store.forkResult.resumeCommand}</code>
-              <button className="text-zinc-500 hover:text-zinc-200" onClick={() => handleCopy(store.forkResult!.resumeCommand)}>
+              <code className="text-xs text-zinc-400 font-[--font-mono]">{tab.forkResult.resumeCommand}</code>
+              <button className="text-zinc-500 hover:text-zinc-200" onClick={() => handleCopy(tab.forkResult!.resumeCommand)}>
                 <Copy className="h-3 w-3" />
               </button>
             </div>
             <Button size="sm" variant="outline" onClick={() => {
-              const sid = store.forkResult!.sessionId;
-              store.clearForkResult();
+              const sid = tab.forkResult!.sessionId;
+              tab.clearForkResult();
               store.selectSession(sid);
             }}>open fork</Button>
-            <Button size="sm" variant="ghost" onClick={() => store.clearForkResult()}>dismiss</Button>
+            <Button size="sm" variant="ghost" onClick={() => tab.clearForkResult()}>dismiss</Button>
           </div>
         </div>
       )}
 
       {/* reconnection banner */}
-      {store.reconnectedSessionId === summary.sessionId && (
+      {tab.reconnectedSessionId === summary.sessionId && (
         <div className="px-5 py-2 bg-green-900/20 border-b border-green-800/50 flex items-center gap-2">
           <span className="h-2 w-2 rounded-full bg-green-500 animate-pulse" />
           <span className="text-xs text-green-400">reconnected to active stream</span>
@@ -196,70 +197,70 @@ export const SessionDetail = observer(({ store }: Props) => {
               totalMessages={messages.length}
               onFork={handleFork}
               onInsertImage={handleInsertImage}
-              forking={store.forking}
+              forking={tab.forking}
               globalExpand={store.settings.globalExpandTools}
               globalDiffs={store.settings.globalShowDiffs}
             />
           ))}
 
-          {store.pendingUserMessage && (
+          {tab.pendingUserMessage && (
             <div className="p-4 border border-border bg-user-bg ml-6">
               <div className="flex items-center gap-2 mb-2">
                 <span className="text-xs font-bold text-zinc-300 uppercase tracking-wide">you</span>
                 <span className="text-xs text-zinc-500">just now</span>
               </div>
-              {store.pendingImages && store.pendingImages.length > 0 && (
+              {tab.pendingImages && tab.pendingImages.length > 0 && (
                 <div className="flex gap-2 mb-2 flex-wrap">
-                  {store.pendingImages.map((img, i) => (
+                  {tab.pendingImages.map((img, i) => (
                     <img key={i} src={`data:${img.mediaType};base64,${img.data}`} alt={`attachment ${i + 1}`} className="max-h-48 max-w-xs border border-border" />
                   ))}
                 </div>
               )}
-              <div className="text-sm text-zinc-300">{store.pendingUserMessage}</div>
+              <div className="text-sm text-zinc-300">{tab.pendingUserMessage}</div>
             </div>
           )}
 
           {/* Committed messages from completed turns during multi-turn streaming */}
-          {store.committedStreamingMessages.map((msg, index) => (
+          {tab.committedStreamingMessages.map((msg, index) => (
             <MessageBubble
               key={msg.uuid}
               message={msg}
               messageIndex={messages.length + index}
-              totalMessages={messages.length + store.committedStreamingMessages.length}
+              totalMessages={messages.length + tab.committedStreamingMessages.length}
               onFork={handleFork}
               onInsertImage={handleInsertImage}
-              forking={store.forking}
+              forking={tab.forking}
               globalExpand={store.settings.globalExpandTools}
               globalDiffs={store.settings.globalShowDiffs}
             />
           ))}
 
           {/* Current streaming turn (in-progress) */}
-          {store.streamingBlocks.length > 0 ? (
-            <StreamingBlocksView blocks={store.streamingBlocks} sending={store.sending} />
-          ) : store.streamingText ? (
+          {tab.streamingBlocks.length > 0 ? (
+            <StreamingBlocksView blocks={tab.streamingBlocks} sending={tab.sending} />
+          ) : tab.streamingText ? (
             <div className="p-4 border border-border bg-assistant-bg mr-6">
               <div className="flex items-center gap-2 mb-2">
                 <span className="text-xs font-bold text-zinc-300 uppercase tracking-wide">claude</span>
-                {store.sending && <span className="text-xs text-green-500 animate-pulse">streaming...</span>}
+                {tab.sending && <span className="text-xs text-green-500 animate-pulse">streaming...</span>}
               </div>
               <div className="text-sm text-zinc-300 markdown-body">
                 <Markdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeHighlight]}>
-                  {store.streamingText}
+                  {tab.streamingText}
                 </Markdown>
               </div>
             </div>
           ) : null}
 
-          {store.sending && !store.streamingText && store.streamingBlocks.length === 0 && (
+          {tab.sending && !tab.streamingText && tab.streamingBlocks.length === 0 && (
             <div className="p-4 border border-border bg-assistant-bg mr-6">
               <div className="flex items-center gap-2 mb-2">
                 <span className="text-xs font-bold text-zinc-300 uppercase tracking-wide">claude</span>
                 <span className="text-xs text-zinc-500 animate-pulse">
-                  {store.committedStreamingMessages.length > 0 ? 'working...' : 'thinking...'}
+                  {tab.committedStreamingMessages.length > 0 ? 'working...' : 'thinking...'}
                 </span>
               </div>
-              {store.committedStreamingMessages.length === 0 && (
+              {tab.committedStreamingMessages.length === 0 && (
                 <div className="text-sm text-zinc-500">waiting for response...</div>
               )}
             </div>
@@ -271,10 +272,10 @@ export const SessionDetail = observer(({ store }: Props) => {
                 no events received for 30s — the session may be waiting for permission approval or is stalled.
               </div>
               <div className="flex gap-2 mt-2">
-                <Button size="sm" variant="outline" className="text-xs" onClick={() => store.cancelSend()}>cancel</Button>
+                <Button size="sm" variant="outline" className="text-xs" onClick={() => tab.cancelSend()}>cancel</Button>
                 <Button size="sm" variant="outline" className="text-xs" onClick={() => {
-                  store.cancelSend();
-                  store.reloadSession(summary.sessionId);
+                  tab.cancelSend();
+                  tab.reloadSession(summary.sessionId);
                 }}>cancel &amp; reload</Button>
               </div>
             </div>
@@ -294,28 +295,28 @@ export const SessionDetail = observer(({ store }: Props) => {
       <MessageInput
         ref={messageInputRef}
         sessionId={summary.sessionId}
-        onSend={(msg, images) => store.sendMessage(summary.sessionId, msg, images)}
-        sending={store.sending}
-        onCancel={() => store.cancelSend()}
+        onSend={(msg, images) => tab.sendMessage(summary.sessionId, msg, images)}
+        sending={tab.sending}
+        onCancel={() => tab.cancelSend()}
       />
     </div>
   );
 });
 
-function useStaleStreamDetector(store: SessionStore): boolean {
+function useStaleStreamDetector(tab: TabSession): boolean {
   const [isStale, setIsStale] = useState(false);
   useEffect(() => {
-    if (!store.sending) {
+    if (!tab.sending) {
       setIsStale(false);
       return;
     }
     const interval = setInterval(() => {
-      if (store.sending && store.lastRawEventTime > 0) {
-        setIsStale(Date.now() - store.lastRawEventTime > 30_000);
+      if (tab.sending && tab.lastRawEventTime > 0) {
+        setIsStale(Date.now() - tab.lastRawEventTime > 30_000);
       }
     }, 5_000);
     return () => clearInterval(interval);
-  }, [store, store.sending]);
+  }, [tab, tab.sending]);
   return isStale;
 }
 
@@ -464,7 +465,7 @@ function MessageBubble({ message, messageIndex, totalMessages, onFork, onInsertI
   const marginClass = isToolOnly ? 'mx-6' : isUser ? 'ml-6' : 'mr-6';
 
   return (
-    <div className={`p-4 border border-border ${marginClass} ${isUser ? 'bg-user-bg' : 'bg-assistant-bg'}`}>
+    <div className={`p-4 border border-border ${marginClass} ${isUser ? 'bg-user-bg' : 'bg-assistant-bg'} min-w-0 overflow-hidden`}>
       {/* header */}
       <div className="flex items-center gap-2 mb-2 flex-wrap">
         <span className="text-xs font-bold text-zinc-300 uppercase tracking-wide">{isUser ? 'you' : 'claude'}</span>
@@ -632,35 +633,28 @@ function MessageBubble({ message, messageIndex, totalMessages, onFork, onInsertI
       {/* tool calls */}
       {message.toolCalls && message.toolCalls.length > 0 && (
         <div className="mt-3 border-t border-zinc-800 pt-2">
-          <div className="flex items-center gap-2">
-            <button
-              className={`text-xs flex items-center gap-1 px-2 py-0.5 border transition-colors ${
-                showTools ? 'border-zinc-600 text-zinc-300 bg-zinc-800' : 'border-border text-zinc-500 hover:text-zinc-300'
-              }`}
-              onClick={toggleTools}
-            >
-              {showTools ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
-              {message.toolCalls.length} tool call{message.toolCalls.length > 1 ? 's' : ''}
-            </button>
-            {hasFileTools && showTools && (
-              <button
-                className={`text-xs px-2 py-0.5 border transition-colors ${
-                  showDiffs ? 'border-zinc-600 text-zinc-300 bg-zinc-800' : 'border-border text-zinc-500 hover:text-zinc-300'
-                }`}
-                onClick={toggleDiffs}
-              >
-                {showDiffs ? 'hide' : 'show'} diffs
-              </button>
-            )}
-          </div>
+          <button
+            className={`text-xs flex items-center gap-1 px-2 py-0.5 border transition-colors ${
+              showTools ? 'border-zinc-600 text-zinc-300 bg-zinc-800' : 'border-border text-zinc-500 hover:text-zinc-300'
+            }`}
+            onClick={toggleTools}
+          >
+            {showTools ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
+            {message.toolCalls.length} tool call{message.toolCalls.length > 1 ? 's' : ''}
+          </button>
           {showTools && (
             <div className="mt-2 space-y-1">
               {message.toolCalls.map((tc, i) => (
-                <ToolCallView key={i} tool={tc} showDiff={showDiffs} forceExpand={showTools} />
+                <ToolCallView key={i} tool={tc} forceExpand={showTools} />
               ))}
             </div>
           )}
         </div>
+      )}
+
+      {/* diffs */}
+      {hasFileTools && (
+        <DiffsSection toolCalls={message.toolCalls!} showDiffs={showDiffs} toggleDiffs={toggleDiffs} />
       )}
 
       {/* subagent tool calls */}
@@ -693,7 +687,7 @@ function SubagentToolCallsView({ toolCalls, forceExpand }: { toolCalls: ToolCall
       {expanded ? (
         <div className="mt-2 space-y-1 ml-3 border-l-2 border-zinc-800 pl-2">
           {toolCalls.map((tc, i) => (
-            <ToolCallView key={i} tool={tc} showDiff={false} forceExpand={forceExpand} />
+            <ToolCallView key={i} tool={tc} forceExpand={forceExpand} />
           ))}
         </div>
       ) : (
@@ -733,10 +727,7 @@ function getToolSummary(tool: ToolCallSummary): string {
   return typeof firstStr === 'string' ? firstStr.slice(0, 120) : '';
 }
 
-function ToolCallView({ tool, showDiff, forceExpand }: { tool: ToolCallSummary; showDiff: boolean; forceExpand?: boolean }) {
-  const isEditTool = tool.name === 'Edit' || tool.name === 'MultiEdit';
-  const isWriteTool = tool.name === 'Write';
-  const filePath = tool.input.file_path as string | undefined;
+function ToolCallView({ tool, forceExpand }: { tool: ToolCallSummary; forceExpand?: boolean }) {
   const [localExpand, setLocalExpand] = useState<boolean | null>(null);
   const prevForceRef = useRef(forceExpand);
   if (prevForceRef.current !== forceExpand) {
@@ -760,26 +751,61 @@ function ToolCallView({ tool, showDiff, forceExpand }: { tool: ToolCallSummary; 
           <ToolCallFormatted input={tool.input} toolName={tool.name} />
         </div>
       )}
-      {showDiff && isEditTool && tool.input.old_string !== undefined && (
-        <div className="border-t border-zinc-800 px-3 py-2">
-          {filePath && <div className="text-xs text-zinc-500 mb-1 font-[--font-mono]">{filePath}</div>}
-          <div className="flex gap-2">
-            <div className="flex-1">
-              <div className="text-xs text-red-400 mb-1">old</div>
-              <pre className="text-xs p-2 overflow-x-auto font-[--font-mono] diff-old"><code>{tool.input.old_string}</code></pre>
-            </div>
-            <div className="flex items-center text-zinc-600">&rarr;</div>
-            <div className="flex-1">
-              <div className="text-xs text-green-400 mb-1">new</div>
-              <pre className="text-xs p-2 overflow-x-auto font-[--font-mono] diff-new"><code>{tool.input.new_string}</code></pre>
-            </div>
-          </div>
-        </div>
-      )}
-      {showDiff && isWriteTool && tool.input.content !== undefined && (
-        <div className="border-t border-zinc-800 px-3 py-2">
-          {filePath && <div className="text-xs text-zinc-500 mb-1 font-[--font-mono]">{filePath} (write)</div>}
-          <pre className="text-xs p-2 overflow-x-auto font-[--font-mono] bg-zinc-900 border border-zinc-800"><code>{tool.input.content}</code></pre>
+    </div>
+  );
+}
+
+function DiffsSection({ toolCalls, showDiffs, toggleDiffs }: { toolCalls: ToolCallSummary[]; showDiffs: boolean; toggleDiffs: () => void }) {
+  const diffs = toolCalls.filter(tc => {
+    if ((tc.name === 'Edit' || tc.name === 'MultiEdit') && tc.input.old_string !== undefined) return true;
+    if (tc.name === 'Write' && tc.input.content !== undefined) return true;
+    return false;
+  });
+  if (diffs.length === 0) return null;
+
+  return (
+    <div className="mt-3 border-t border-zinc-800 pt-2">
+      <button
+        className={`text-xs flex items-center gap-1 px-2 py-0.5 border transition-colors ${
+          showDiffs ? 'border-zinc-600 text-zinc-300 bg-zinc-800' : 'border-border text-zinc-500 hover:text-zinc-300'
+        }`}
+        onClick={toggleDiffs}
+      >
+        {showDiffs ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
+        {diffs.length} diff{diffs.length > 1 ? 's' : ''}
+      </button>
+      {showDiffs && (
+        <div className="mt-2 space-y-2 min-w-0">
+          {diffs.map((tc, i) => {
+            const filePath = tc.input.file_path as string | undefined;
+            const isEdit = tc.name === 'Edit' || tc.name === 'MultiEdit';
+            return (
+              <div key={i} className="border border-zinc-800 bg-black/30 min-w-0 overflow-hidden">
+                {filePath && (
+                  <div className="text-xs text-zinc-500 px-3 py-1.5 border-b border-zinc-800 font-[--font-mono] truncate">
+                    {filePath}{!isEdit ? ' (write)' : ''}
+                  </div>
+                )}
+                {isEdit ? (
+                  <div className="flex gap-2 px-3 py-2 min-w-0 overflow-hidden">
+                    <div className="flex-1 min-w-0">
+                      <div className="text-xs text-red-400 mb-1">old</div>
+                      <pre className="text-xs p-2 overflow-x-auto font-[--font-mono] diff-old"><code>{tc.input.old_string}</code></pre>
+                    </div>
+                    <div className="flex items-center text-zinc-600 shrink-0">&rarr;</div>
+                    <div className="flex-1 min-w-0">
+                      <div className="text-xs text-green-400 mb-1">new</div>
+                      <pre className="text-xs p-2 overflow-x-auto font-[--font-mono] diff-new"><code>{tc.input.new_string}</code></pre>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="px-3 py-2 min-w-0 overflow-hidden">
+                    <pre className="text-xs p-2 overflow-x-auto font-[--font-mono] bg-zinc-900 border border-zinc-800"><code>{tc.input.content}</code></pre>
+                  </div>
+                )}
+              </div>
+            );
+          })}
         </div>
       )}
     </div>
@@ -864,7 +890,7 @@ const MessageInput = forwardRef<ChatInputHandle, MessageInputProps>(function Mes
         onSubmit={handleSubmit}
         onCancel={onCancel}
         sending={sending}
-        placeholder={sending ? 'claude is responding... (esc to cancel)' : 'send a message... (paste/drop images, enter to send)'}
+        placeholder={sending ? 'draft your next message... (esc to cancel stream)' : 'send a message... (paste/drop images, enter to send)'}
       />
     </div>
   );
