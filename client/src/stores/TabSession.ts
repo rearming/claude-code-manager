@@ -41,6 +41,7 @@ export class TabSession {
   pendingUserMessage: string | null = null;
   pendingImages: ImageAttachment[] | null = null;
   scrollToBottomOnLoad = false;
+  stickToBottom = false;
 
   // Terminal state
   rawLines: string[] = [];
@@ -498,6 +499,10 @@ export class TabSession {
 
   clearForkResult() {
     this.forkResult = null;
+  }
+
+  setStickToBottom(value: boolean) {
+    this.stickToBottom = value;
   }
 
   private showReconnectionBanner(sessionId: string) {
