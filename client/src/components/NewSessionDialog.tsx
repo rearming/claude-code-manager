@@ -65,7 +65,7 @@ export const NewSessionDialog = observer(({ store }: Props) => {
   const loadDraftIntoForm = (draft: Draft) => {
     setMessage(draft.message);
     setProjectPath(draft.projectPath);
-    setDraftName(draft.name);
+    setDraftName(draft.name || '');
     setEditingDraftId(draft.id);
     localStorage.setItem('ccm-new-session-message', draft.message);
     localStorage.setItem('ccm-last-project-dir', draft.projectPath);
@@ -120,7 +120,7 @@ export const NewSessionDialog = observer(({ store }: Props) => {
     if (!draft) return false;
     return draft.message !== message.trim()
       || draft.projectPath !== projectPath.trim()
-      || draft.name !== draftName.trim();
+      || (draft.name || '') !== draftName.trim();
   };
 
   const handleCloseAttempt = () => {
