@@ -1,5 +1,6 @@
 import { observer } from 'mobx-react-lite';
-import { X } from 'lucide-react';
+import { useState } from 'react';
+import { X, Bell } from 'lucide-react';
 import { Button } from '@/components/shadcn/ui/button';
 import { Switch } from '@/components/shadcn/ui/switch';
 import type { SessionStore } from '../stores/SessionStore';
@@ -9,7 +10,28 @@ interface Props {
 }
 
 export const SettingsPanel = observer(({ store }: Props) => {
+  const [permissionState, setPermissionState] = useState<NotificationPermission | 'unsupported'>(
+    store.notificationPermission
+  );
+
   if (!store.showSettings) return null;
+
+  const handleNotificationToggle = async (checked: boolean) => {
+    if (checked && permissionState === 'default') {
+      const result = await store.requestNotificationPermission();
+      setPermissionState(result);
+      if (result === 'granted') {
+        store.setNotifyOnStreamEnd(true);
+      }
+    } else if (checked && permissionState === 'granted') {
+      store.setNotifyOnStreamEnd(true);
+    } else {
+      store.setNotifyOnStreamEnd(false);
+    }
+  };
+
+  const notificationsBlocked = permissionState === 'denied';
+  const notificationsUnsupported = permissionState === 'unsupported';
 
   return (
     <div className="fixed inset-0 z-50 bg-black/70" onClick={() => store.toggleSettings()}>
@@ -49,6 +71,27 @@ export const SettingsPanel = observer(({ store }: Props) => {
                 skip permission prompts for all tool calls (--dangerously-skip-permissions).
                 required for sending messages from this ui since there is no approval interface.
                 only use in trusted environments.
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-start gap-3">
+            <Switch
+              checked={store.settings.notifyOnStreamEnd && permissionState === 'granted'}
+              onCheckedChange={handleNotificationToggle}
+              disabled={notificationsBlocked || notificationsUnsupported}
+            />
+            <div>
+              <div className="text-sm text-zinc-200 flex items-center gap-2">
+                <Bell className="h-3.5 w-3.5" />
+                notify when stream ends
+              </div>
+              <p className="text-xs text-zinc-500 mt-1">
+                {notificationsUnsupported
+                  ? 'notifications not supported in this browser.'
+                  : notificationsBlocked
+                    ? 'notifications blocked. enable in browser settings.'
+                    : 'show a system notification when claude finishes responding. works across all apps.'}
               </p>
             </div>
           </div>

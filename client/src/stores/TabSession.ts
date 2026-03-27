@@ -59,9 +59,11 @@ export class TabSession {
   private _getDangerouslySkipPermissions: () => boolean;
   private _getCustomName: (sessionId: string) => string | undefined;
   private _setCustomName: (sessionId: string, name: string) => void;
+  private _onStreamEnd: (title: string, cost?: number) => void;
   private _reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private _rawLinesPersistTimer: ReturnType<typeof setTimeout> | null = null;
   private _pendingCustomName: string | null = null;
+  private _lastResultCost: number | undefined = undefined;
 
   constructor(
     sessionId: string | null,
@@ -69,6 +71,7 @@ export class TabSession {
     getDangerouslySkipPermissions: () => boolean,
     getCustomName: (sessionId: string) => string | undefined,
     setCustomName: (sessionId: string, name: string) => void,
+    onStreamEnd: (title: string, cost?: number) => void,
   ) {
     this.tabId = `tab-${nextTabId++}`;
     this.sessionId = sessionId;
@@ -76,14 +79,17 @@ export class TabSession {
     this._getDangerouslySkipPermissions = getDangerouslySkipPermissions;
     this._getCustomName = getCustomName;
     this._setCustomName = setCustomName;
-    makeAutoObservable<TabSession, '_onSessionsChanged' | '_getDangerouslySkipPermissions' | '_getCustomName' | '_setCustomName' | '_reconnectTimer' | '_rawLinesPersistTimer' | '_pendingCustomName'>(this, {
+    this._onStreamEnd = onStreamEnd;
+    makeAutoObservable<TabSession, '_onSessionsChanged' | '_getDangerouslySkipPermissions' | '_getCustomName' | '_setCustomName' | '_onStreamEnd' | '_reconnectTimer' | '_rawLinesPersistTimer' | '_pendingCustomName' | '_lastResultCost'>(this, {
       _onSessionsChanged: false,
       _getDangerouslySkipPermissions: false,
       _getCustomName: false,
       _setCustomName: false,
+      _onStreamEnd: false,
       _reconnectTimer: false,
       _rawLinesPersistTimer: false,
       _pendingCustomName: false,
+      _lastResultCost: false,
     });
   }
 
@@ -324,12 +330,14 @@ export class TabSession {
     this.streamingBlocks = [];
     this.committedStreamingMessages = [];
 
+    this._lastResultCost = undefined;
     const abort = streamMessageToSession(sessionId, message, this._getDangerouslySkipPermissions(), {
       images: images,
       onText: (text) => { runInAction(() => { this.streamingText += text; }); },
       onRaw: (data) => { runInAction(() => { this.appendRawLine(data); }); },
       onResult: (data) => {
         runInAction(() => {
+          this._lastResultCost = data.cost;
           if (data.result && this.committedStreamingMessages.length === 0) {
             this.streamingText = data.result;
           }
@@ -350,6 +358,7 @@ export class TabSession {
           this.pendingImages = null;
           this.abortStream = null;
           this.scrollToBottomOnLoad = true;
+          this._onStreamEnd(this.title, this._lastResultCost);
           this.reloadSession(sessionId, true);
         });
       },
@@ -371,6 +380,7 @@ export class TabSession {
     this.streamingBlocks = [];
     this.committedStreamingMessages = [];
 
+    this._lastResultCost = undefined;
     const abort = streamNewSession(message, projectPath, this._getDangerouslySkipPermissions(), {
       images: images,
       onInit: (data) => {
@@ -387,6 +397,7 @@ export class TabSession {
       onRaw: (data) => { runInAction(() => { this.appendRawLine(data); }); },
       onResult: (data) => {
         runInAction(() => {
+          this._lastResultCost = data.cost;
           if (data.result && this.committedStreamingMessages.length === 0) {
             this.streamingText = data.result;
           }
@@ -408,6 +419,7 @@ export class TabSession {
           this.abortStream = null;
           const sid = this.sessionId;
           this._onSessionsChanged();
+          this._onStreamEnd(this.title, this._lastResultCost);
           if (sid) {
             this.scrollToBottomOnLoad = true;
             this.reloadSession(sid, true);
@@ -449,11 +461,13 @@ export class TabSession {
         this.showReconnectionBanner(sessionId);
       });
 
+      this._lastResultCost = undefined;
       const abort = subscribeToSession(sessionId, {
         onText: (text) => { runInAction(() => { this.streamingText += text; }); },
         onRaw: (data) => { runInAction(() => { this.appendRawLine(data); }); },
         onResult: (data) => {
           runInAction(() => {
+            this._lastResultCost = data.cost;
             if (data.result && this.committedStreamingMessages.length === 0) {
               this.streamingText = data.result;
             }
@@ -470,6 +484,7 @@ export class TabSession {
             this.sending = false;
             this.abortStream = null;
             this.scrollToBottomOnLoad = true;
+            this._onStreamEnd(this.title, this._lastResultCost);
             this.reloadSession(sessionId, true);
           });
         },

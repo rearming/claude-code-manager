@@ -32,6 +32,7 @@ interface Settings {
   panelLayout: PanelLayout;
   projectFilter: string;
   showOpenTabsOnly: boolean;
+  notifyOnStreamEnd: boolean;
 }
 
 const defaultPanelLayout: PanelLayout = {
@@ -52,6 +53,7 @@ const defaultSettings: Settings = {
   panelLayout: { ...defaultPanelLayout },
   projectFilter: '',
   showOpenTabsOnly: false,
+  notifyOnStreamEnd: false,
 };
 
 function loadSettings(): Settings {
@@ -193,7 +195,24 @@ export class SessionStore {
       () => this.settings.dangerouslySkipPermissions,
       (sid: string) => this.customNames[sid],
       (sid: string, name: string) => this.renameSession(sid, name),
+      (title: string, cost?: number) => this.showStreamEndNotification(title, cost),
     );
+  }
+
+  private showStreamEndNotification(title: string, cost?: number) {
+    if (!this.settings.notifyOnStreamEnd) return;
+    if (!('Notification' in window)) return;
+    if (Notification.permission !== 'granted') return;
+
+    const body = cost !== undefined
+      ? `completed · $${cost.toFixed(4)}`
+      : 'completed';
+
+    new Notification(title, {
+      body,
+      icon: '/favicon.ico',
+      tag: 'stream-end',
+    });
   }
 
   /** Open a session in a tab. If already open, activate it. */
@@ -363,6 +382,22 @@ export class SessionStore {
   setDangerouslySkipPermissions(value: boolean) {
     this.settings.dangerouslySkipPermissions = value;
     this.persistSettings();
+  }
+
+  setNotifyOnStreamEnd(value: boolean) {
+    this.settings.notifyOnStreamEnd = value;
+    this.persistSettings();
+  }
+
+  get notificationPermission(): NotificationPermission | 'unsupported' {
+    if (!('Notification' in window)) return 'unsupported';
+    return Notification.permission;
+  }
+
+  async requestNotificationPermission(): Promise<NotificationPermission | 'unsupported'> {
+    if (!('Notification' in window)) return 'unsupported';
+    const result = await Notification.requestPermission();
+    return result;
   }
 
   toggleGlobalExpandTools() {
