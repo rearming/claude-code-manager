@@ -53,6 +53,7 @@ export interface ForkResult {
 
 export interface Draft {
   id: string;
+  name: string; // optional display name, empty = use first line
   message: string;
   projectPath: string; // empty string = freeform
   images: ImageAttachment[];

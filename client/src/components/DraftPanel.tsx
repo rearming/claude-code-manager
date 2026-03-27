@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { observer } from 'mobx-react-lite';
-import { FileText, Trash2, Send, ChevronDown, ChevronRight, Pencil, FolderOpen } from 'lucide-react';
+import { FileText, Trash2, Send, ChevronDown, ChevronRight, FolderOpen } from 'lucide-react';
 import { Button } from '@/components/shadcn/ui/button';
 import { Input } from '@/components/shadcn/ui/input';
 import {
@@ -48,7 +48,7 @@ const DraftCard = observer(({ draft, store, projectPaths }: DraftCardProps) => {
   const [picking, setPicking] = useState(false);
 
   const isFreeform = !draft.projectPath;
-  const firstLine = draft.message.split('\n')[0];
+  const displayName = draft.name || draft.message.split('\n')[0];
 
   const handleSend = () => {
     if (isFreeform) {
@@ -81,11 +81,11 @@ const DraftCard = observer(({ draft, store, projectPaths }: DraftCardProps) => {
   };
 
   return (
-    <div className="group px-4 py-3 border-b border-border hover:bg-zinc-900 transition-colors">
+    <div className="group px-4 py-3 border-b border-border hover:bg-zinc-900 transition-colors cursor-pointer" onClick={() => store.openDraft(draft.id)}>
       <div className="flex items-start gap-2">
         <FileText className="h-3.5 w-3.5 mt-0.5 text-zinc-600 shrink-0" />
         <div className="flex-1 min-w-0">
-          <div className="text-sm text-zinc-300 truncate">{truncate(firstLine, 80)}</div>
+          <div className="text-sm text-zinc-300 truncate">{truncate(displayName, 80)}</div>
           <div className="flex items-center gap-2 mt-1">
             <span className="text-xs text-zinc-600">{formatDate(draft.updatedAt)}</span>
             {draft.images.length > 0 && (
@@ -95,22 +95,15 @@ const DraftCard = observer(({ draft, store, projectPaths }: DraftCardProps) => {
         </div>
         <div className="flex items-center gap-0.5 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
           <button
-            className="p-1 text-zinc-600 hover:text-zinc-300 transition-colors"
-            onClick={() => store.openDraft(draft.id)}
-            title="edit draft"
-          >
-            <Pencil className="h-3.5 w-3.5" />
-          </button>
-          <button
             className="p-1 text-zinc-600 hover:text-green-400 transition-colors"
-            onClick={handleSend}
+            onClick={(e) => { e.stopPropagation(); handleSend(); }}
             title={isFreeform ? 'assign project & send' : 'start session from draft'}
           >
             <Send className="h-3.5 w-3.5" />
           </button>
           <button
             className="p-1 text-zinc-600 hover:text-red-400 transition-colors"
-            onClick={() => draftStore.deleteDraft(draft.id)}
+            onClick={(e) => { e.stopPropagation(); draftStore.deleteDraft(draft.id); }}
             title="delete draft"
           >
             <Trash2 className="h-3.5 w-3.5" />

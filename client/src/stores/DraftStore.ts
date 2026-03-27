@@ -43,10 +43,11 @@ export class DraftStore {
 
   // ── Actions ─────────────────────────────────────────────
 
-  saveDraft(message: string, projectPath: string, images: ImageAttachment[] = []): Draft {
+  saveDraft(message: string, projectPath: string, images: ImageAttachment[] = [], name = ''): Draft {
     const now = Date.now();
     const draft: Draft = {
       id: generateId(),
+      name: name.trim(),
       message,
       projectPath: projectPath.trim(),
       images,
@@ -58,9 +59,10 @@ export class DraftStore {
     return draft;
   }
 
-  updateDraft(id: string, updates: Partial<Pick<Draft, 'message' | 'projectPath' | 'images'>>) {
+  updateDraft(id: string, updates: Partial<Pick<Draft, 'name' | 'message' | 'projectPath' | 'images'>>) {
     const draft = this.drafts.find(d => d.id === id);
     if (!draft) return;
+    if (updates.name !== undefined) draft.name = updates.name.trim();
     if (updates.message !== undefined) draft.message = updates.message;
     if (updates.projectPath !== undefined) draft.projectPath = updates.projectPath.trim();
     if (updates.images !== undefined) draft.images = updates.images;
