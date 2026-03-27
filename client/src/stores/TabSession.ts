@@ -408,8 +408,9 @@ export class TabSession {
     this.abortStream = abort;
   }
 
-  cancelSend() {
+  cancelSend(): string | null {
     if (this.abortStream) {
+      const message = this.pendingUserMessage;
       this.abortStream();
       this.abortStream = null;
       this.sending = false;
@@ -417,7 +418,9 @@ export class TabSession {
       this.streamingToolCalls = [];
       this.streamingBlocks = [];
       this.committedStreamingMessages = [];
+      return message;
     }
+    return null;
   }
 
   async tryReconnectToStream(sessionId: string) {

@@ -865,7 +865,7 @@ function ToolCallFormatted({ input, toolName }: { input: Record<string, unknown>
 
 interface MessageInputProps {
   onSend: (message: string, images?: ImageAttachment[]) => void;
-  onCancel: () => void;
+  onCancel: () => string | null;
   sending: boolean;
   sessionId: string;
   projectPath?: string;
@@ -902,6 +902,14 @@ const MessageInput = forwardRef<ChatInputHandle, MessageInputProps>(function Mes
     setDraftCache(sessionId, '');
   };
 
+  const handleCancel = () => {
+    const restored = onCancel();
+    if (restored) {
+      setText(restored);
+      setDraftCache(sessionId, restored);
+    }
+  };
+
   return (
     <div className="p-3 border-t border-border">
       <ChatInput
@@ -909,7 +917,7 @@ const MessageInput = forwardRef<ChatInputHandle, MessageInputProps>(function Mes
         value={text}
         onChange={handleChange}
         onSubmit={handleSubmit}
-        onCancel={onCancel}
+        onCancel={handleCancel}
         sending={sending}
         projectPath={projectPath}
         placeholder={sending ? 'draft your next message... (esc to cancel stream)' : 'send a message... (paste/drop images, enter to send)'}
