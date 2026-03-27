@@ -17,6 +17,7 @@ import { NewSessionDialog } from './NewSessionDialog';
 import { TerminalPanel } from './TerminalPanel';
 import { TabBar } from './TabBar';
 import { TabTray } from './TabTray';
+import { DraftPanel } from './DraftPanel';
 
 interface Props {
   store: SessionStore;
@@ -224,6 +225,7 @@ const Sidebar = observer(({ store }: { store: SessionStore }) => (
       </div>
     </div>
     <SearchBar store={store} />
+    <DraftPanel store={store} />
     <SessionList store={store} />
   </aside>
 ));

@@ -50,3 +50,12 @@ export interface ForkResult {
   resumeCommand: string;
   messagesCopied: number;
 }
+
+export interface Draft {
+  id: string;
+  message: string;
+  projectPath: string; // empty string = freeform
+  images: ImageAttachment[];
+  createdAt: number;
+  updatedAt: number;
+}

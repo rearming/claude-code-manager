@@ -129,6 +129,7 @@ export class SessionStore {
   showArchived = false;
   showOpenTabsOnly = loadSettings().showOpenTabsOnly || false;
   showNewSession = false;
+  pendingDraftId: string | null = null;
 
   // ── Tab management ────────────────────────────────────────
   tabs: TabSession[] = [];
@@ -300,6 +301,16 @@ export class SessionStore {
 
   closeNewSession() {
     this.showNewSession = false;
+    this.pendingDraftId = null;
+  }
+
+  openDraft(draftId: string) {
+    this.pendingDraftId = draftId;
+    this.showNewSession = true;
+  }
+
+  clearPendingDraft() {
+    this.pendingDraftId = null;
   }
 
   startNewSession(message: string, projectPath: string, images?: ImageAttachment[]) {
