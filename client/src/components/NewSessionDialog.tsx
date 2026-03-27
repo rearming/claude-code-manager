@@ -87,6 +87,7 @@ export const NewSessionDialog = observer(({ store }: Props) => {
   const handleSubmit = (text: string, images?: ImageAttachment[]) => {
     const trimmedPath = projectPath.trim();
     if (!text || !trimmedPath) return;
+    const nameToApply = draftName.trim() || undefined;
     if (editingDraftId) {
       draftStore.deleteDraft(editingDraftId);
       setEditingDraftId(null);
@@ -94,7 +95,7 @@ export const NewSessionDialog = observer(({ store }: Props) => {
     setDraftName('');
     localStorage.removeItem('ccm-new-session-message');
     setMessage('');
-    store.startNewSession(text, trimmedPath, images);
+    store.startNewSession(text, trimmedPath, images, nameToApply);
   };
 
   const handleSaveDraft = () => {
@@ -322,7 +323,7 @@ export const NewSessionDialog = observer(({ store }: Props) => {
                             loadDraftIntoForm(draft);
                             return;
                           }
-                          store.startNewSession(draft.message, draft.projectPath, draft.images.length > 0 ? draft.images : undefined);
+                          store.startNewSession(draft.message, draft.projectPath, draft.images.length > 0 ? draft.images : undefined, draft.name || undefined);
                           draftStore.deleteDraft(draft.id);
                         }}
                         onDelete={() => {

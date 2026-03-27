@@ -55,7 +55,7 @@ const DraftCard = observer(({ draft, store, projectPaths }: DraftCardProps) => {
       setAssigning(true);
       return;
     }
-    store.startNewSession(draft.message, draft.projectPath, draft.images.length > 0 ? draft.images : undefined);
+    store.startNewSession(draft.message, draft.projectPath, draft.images.length > 0 ? draft.images : undefined, draft.name || undefined);
     draftStore.deleteDraft(draft.id);
   };
 
@@ -63,7 +63,7 @@ const DraftCard = observer(({ draft, store, projectPaths }: DraftCardProps) => {
     const trimmed = assignPath.trim();
     if (!trimmed) return;
     draftStore.updateDraft(draft.id, { projectPath: trimmed });
-    store.startNewSession(draft.message, trimmed, draft.images.length > 0 ? draft.images : undefined);
+    store.startNewSession(draft.message, trimmed, draft.images.length > 0 ? draft.images : undefined, draft.name || undefined);
     draftStore.deleteDraft(draft.id);
     setAssigning(false);
   };

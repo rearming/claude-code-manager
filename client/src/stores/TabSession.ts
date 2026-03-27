@@ -58,26 +58,32 @@ export class TabSession {
   private _onSessionsChanged: () => void;
   private _getDangerouslySkipPermissions: () => boolean;
   private _getCustomName: (sessionId: string) => string | undefined;
+  private _setCustomName: (sessionId: string, name: string) => void;
   private _reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private _rawLinesPersistTimer: ReturnType<typeof setTimeout> | null = null;
+  private _pendingCustomName: string | null = null;
 
   constructor(
     sessionId: string | null,
     onSessionsChanged: () => void,
     getDangerouslySkipPermissions: () => boolean,
     getCustomName: (sessionId: string) => string | undefined,
+    setCustomName: (sessionId: string, name: string) => void,
   ) {
     this.tabId = `tab-${nextTabId++}`;
     this.sessionId = sessionId;
     this._onSessionsChanged = onSessionsChanged;
     this._getDangerouslySkipPermissions = getDangerouslySkipPermissions;
     this._getCustomName = getCustomName;
-    makeAutoObservable<TabSession, '_onSessionsChanged' | '_getDangerouslySkipPermissions' | '_getCustomName' | '_reconnectTimer' | '_rawLinesPersistTimer'>(this, {
+    this._setCustomName = setCustomName;
+    makeAutoObservable<TabSession, '_onSessionsChanged' | '_getDangerouslySkipPermissions' | '_getCustomName' | '_setCustomName' | '_reconnectTimer' | '_rawLinesPersistTimer' | '_pendingCustomName'>(this, {
       _onSessionsChanged: false,
       _getDangerouslySkipPermissions: false,
       _getCustomName: false,
+      _setCustomName: false,
       _reconnectTimer: false,
       _rawLinesPersistTimer: false,
+      _pendingCustomName: false,
     });
   }
 
@@ -352,11 +358,12 @@ export class TabSession {
     this.abortStream = abort;
   }
 
-  startNewSession(message: string, projectPath: string, images?: ImageAttachment[]) {
+  startNewSession(message: string, projectPath: string, images?: ImageAttachment[], customName?: string) {
     this.sending = true;
     this.streamingText = '';
     this.pendingUserMessage = message;
     this.pendingImages = images || null;
+    this._pendingCustomName = customName?.trim() || null;
     this.error = null;
     this.selectedDetail = null;
     this.clearRawLines();
@@ -369,6 +376,10 @@ export class TabSession {
       onInit: (data) => {
         runInAction(() => {
           this.sessionId = data.sessionId;
+          if (this._pendingCustomName) {
+            this._setCustomName(data.sessionId, this._pendingCustomName);
+            this._pendingCustomName = null;
+          }
           this._onSessionsChanged();
         });
       },

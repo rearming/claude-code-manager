@@ -192,6 +192,7 @@ export class SessionStore {
       () => this.loadSessions(),
       () => this.settings.dangerouslySkipPermissions,
       (sid: string) => this.customNames[sid],
+      (sid: string, name: string) => this.renameSession(sid, name),
     );
   }
 
@@ -212,12 +213,12 @@ export class SessionStore {
   }
 
   /** Open a new-session tab (sessionId unknown until stream starts) */
-  openNewSessionTab(message: string, projectPath: string, images?: ImageAttachment[]) {
+  openNewSessionTab(message: string, projectPath: string, images?: ImageAttachment[], customName?: string) {
     const tab = this.createTab(null);
     this.tabs.push(tab);
     this.activeTabId = tab.tabId;
     this.persistTabs();
-    tab.startNewSession(message, projectPath, images);
+    tab.startNewSession(message, projectPath, images, customName);
     return tab;
   }
 
@@ -313,9 +314,9 @@ export class SessionStore {
     this.pendingDraftId = null;
   }
 
-  startNewSession(message: string, projectPath: string, images?: ImageAttachment[]) {
+  startNewSession(message: string, projectPath: string, images?: ImageAttachment[], customName?: string) {
     this.showNewSession = false;
-    this.openNewSessionTab(message, projectPath, images);
+    this.openNewSessionTab(message, projectPath, images, customName);
   }
 
   // ── Settings / UI ─────────────────────────────────────────
