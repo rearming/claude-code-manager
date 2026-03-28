@@ -456,8 +456,14 @@ export class SessionStore {
   // ── Session list ──────────────────────────────────────────
 
   get projects(): string[] {
-    const projectSet = new Set(this.sessions.map((s) => s.project));
-    return Array.from(projectSet).sort();
+    const latestByProject = new Map<string, number>();
+    for (const s of this.sessions) {
+      const prev = latestByProject.get(s.project) ?? 0;
+      if (s.lastTimestamp > prev) latestByProject.set(s.project, s.lastTimestamp);
+    }
+    return Array.from(latestByProject.keys()).sort(
+      (a, b) => (latestByProject.get(b) ?? 0) - (latestByProject.get(a) ?? 0)
+    );
   }
 
   get filteredSessions(): SessionSummary[] {
@@ -506,12 +512,23 @@ export class SessionStore {
 
   get groupedSessions(): Map<string, SessionSummary[]> {
     const groups = new Map<string, SessionSummary[]>();
+    const latestByProject = new Map<string, number>();
     for (const session of this.filteredSessions) {
       const key = session.project;
       if (!groups.has(key)) groups.set(key, []);
       groups.get(key)!.push(session);
+      const prev = latestByProject.get(key) ?? 0;
+      if (session.lastTimestamp > prev) latestByProject.set(key, session.lastTimestamp);
     }
-    return groups;
+    // Return a new Map sorted by most recently active project
+    const sorted = new Map<string, SessionSummary[]>();
+    const sortedKeys = Array.from(groups.keys()).sort(
+      (a, b) => (latestByProject.get(b) ?? 0) - (latestByProject.get(a) ?? 0)
+    );
+    for (const key of sortedKeys) {
+      sorted.set(key, groups.get(key)!);
+    }
+    return sorted;
   }
 
   setSearchQuery(query: string) {

@@ -82,7 +82,7 @@ export const NewSessionDialog = observer(({ store }: Props) => {
 
   if (!store.showNewSession) return null;
 
-  const projectPaths = [...new Set(store.sessions.map((s) => s.project))].sort();
+  const projectPaths = store.projects;
 
   const handleSubmit = (text: string, images?: ImageAttachment[]) => {
     const trimmedPath = projectPath.trim();
