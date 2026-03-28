@@ -9,6 +9,8 @@ export function getResumeCommand(sessionId: string): string {
 
 export interface StreamOptions {
   dangerouslySkipPermissions?: boolean;
+  model?: string;
+  reasoningEffort?: string;
 }
 
 // ---------- Persistent Session Process ----------
@@ -52,6 +54,9 @@ class SessionProcess extends EventEmitter {
     ];
     if (options.dangerouslySkipPermissions) {
       args.push('--dangerously-skip-permissions');
+    }
+    if (options.model) {
+      args.push('--model', options.model);
     }
     if (resumeSessionId) {
       args.push('--resume', resumeSessionId);
@@ -246,11 +251,12 @@ function getOrCreateProcess(
 ): SessionProcess {
   const existing = processPool.get(sessionKey);
   if (existing?.alive) {
-    // If permission setting changed, kill the old process and respawn
+    // If options changed, kill the old process and respawn
     const wantSkip = !!options.dangerouslySkipPermissions;
     const hasSkip = !!existing.options.dangerouslySkipPermissions;
-    if (wantSkip === hasSkip) return existing;
-    console.log(`[SessionProcess] Permission setting changed (${hasSkip} → ${wantSkip}), respawning process for ${sessionKey}`);
+    const modelChanged = (options.model || '') !== (existing.options.model || '');
+    if (wantSkip === hasSkip && !modelChanged) return existing;
+    console.log(`[SessionProcess] Options changed, respawning process for ${sessionKey}`);
     existing.kill();
   }
 

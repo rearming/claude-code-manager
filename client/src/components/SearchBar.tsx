@@ -33,7 +33,7 @@ export const SearchBar = observer(({ store }: Props) => {
           value={store.projectFilter}
           onValueChange={(val) => store.setProjectFilter(val === '__all__' ? '' : val)}
         >
-          <SelectTrigger className="flex-1 h-7 bg-black/50 text-sm text-zinc-300">
+          <SelectTrigger className="flex-1 min-w-0 h-7 bg-black/50 text-sm text-zinc-300">
             <SelectValue placeholder="all projects" />
           </SelectTrigger>
           <SelectContent>

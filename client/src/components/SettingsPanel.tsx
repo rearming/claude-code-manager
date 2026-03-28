@@ -3,6 +3,14 @@ import { useState } from 'react';
 import { X, Bell } from 'lucide-react';
 import { Button } from '@/components/shadcn/ui/button';
 import { Switch } from '@/components/shadcn/ui/switch';
+import { Input } from '@/components/shadcn/ui/input';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/shadcn/ui/select';
 import type { SessionStore } from '../stores/SessionStore';
 
 interface Props {
@@ -93,6 +101,47 @@ export const SettingsPanel = observer(({ store }: Props) => {
                     ? 'notifications blocked. enable in browser settings.'
                     : 'show a system notification when claude finishes responding. works across all apps.'}
               </p>
+            </div>
+          </div>
+
+          <div className="border-t border-zinc-700 pt-4">
+            <h4 className="text-sm font-bold text-zinc-300 mb-3">model config (global defaults)</h4>
+            <p className="text-xs text-zinc-500 mb-4">
+              these are the default model settings for all chats. individual chats can override these.
+            </p>
+
+            <div className="space-y-3">
+              <div>
+                <label className="text-xs text-zinc-500 uppercase tracking-wide block mb-1">model</label>
+                <Input
+                  type="text"
+                  placeholder="default (leave empty)"
+                  value={store.modelConfig.model}
+                  onChange={(e) => store.setModelConfig({ model: e.target.value })}
+                  className="bg-black/50 h-8 text-xs"
+                />
+                <p className="text-[10px] text-zinc-600 mt-1">
+                  e.g. claude-sonnet-4-5-20250514, claude-opus-4-0-20250514
+                </p>
+              </div>
+
+              <div>
+                <label className="text-xs text-zinc-500 uppercase tracking-wide block mb-1">reasoning effort</label>
+                <Select
+                  value={store.modelConfig.reasoningEffort || '__default__'}
+                  onValueChange={(val) => store.setModelConfig({ reasoningEffort: val === '__default__' ? '' : val as 'low' | 'medium' | 'high' })}
+                >
+                  <SelectTrigger className="bg-black/50 h-8 text-xs">
+                    <SelectValue placeholder="default" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__default__">default</SelectItem>
+                    <SelectItem value="low">low</SelectItem>
+                    <SelectItem value="medium">medium</SelectItem>
+                    <SelectItem value="high">high</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
           </div>
         </div>

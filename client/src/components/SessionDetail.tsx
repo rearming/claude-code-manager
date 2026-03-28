@@ -4,9 +4,17 @@ import Markdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import rehypeHighlight from 'rehype-highlight';
 import 'highlight.js/styles/github-dark.min.css';
-import { GitFork, Copy, ChevronDown, ChevronRight, ArrowDown, ArrowDownToLine, X, Pencil, Download, ClipboardCopy, MessageSquarePlus, Brain } from 'lucide-react';
+import { GitFork, Copy, ChevronDown, ChevronRight, ArrowDown, ArrowDownToLine, X, Pencil, Download, ClipboardCopy, MessageSquarePlus, Brain, Settings2 as Settings2Icon } from 'lucide-react';
 import { cn } from '@/components/shadcn/lib/utils';
 import { Button } from '@/components/shadcn/ui/button';
+import { Input } from '@/components/shadcn/ui/input';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/shadcn/ui/select';
 import {
   Dialog,
   DialogContent,
@@ -318,6 +326,7 @@ export const SessionDetail = observer(({ store, tab }: Props) => {
         onSend={(msg, images) => tab.sendMessage(summary.sessionId, msg, images)}
         sending={tab.sending}
         onCancel={() => tab.cancelSend()}
+        tab={tab}
       />
     </div>
   );
@@ -891,7 +900,82 @@ interface MessageInputProps {
   sending: boolean;
   sessionId: string;
   projectPath?: string;
+  tab: TabSession;
 }
+
+const ChatConfigPanel = observer(({ tab, onClose }: { tab: TabSession; onClose: () => void }) => {
+  const override = tab.modelConfigOverride || {};
+  const effective = tab.effectiveModelConfig;
+
+  const setField = (field: 'model' | 'reasoningEffort', value: string) => {
+    const current = tab.modelConfigOverride || {};
+    tab.setModelConfigOverride({ ...current, [field]: value || undefined });
+  };
+
+  const clearField = (field: 'model' | 'reasoningEffort') => {
+    if (!tab.modelConfigOverride) return;
+    const current = { ...tab.modelConfigOverride };
+    delete current[field];
+    const hasKeys = Object.values(current).some(v => v !== undefined);
+    tab.setModelConfigOverride(hasKeys ? current : null);
+  };
+
+  return (
+    <div className="mb-2 p-2.5 border border-zinc-700 bg-black/60 space-y-2.5">
+      <div className="flex items-center justify-between">
+        <span className="text-[10px] text-zinc-500 uppercase tracking-wide font-bold">per-chat model config</span>
+        <button className="text-zinc-600 hover:text-zinc-400 transition-colors" onClick={onClose}>
+          <X className="h-3 w-3" />
+        </button>
+      </div>
+
+      <div>
+        <label className="text-[10px] text-zinc-500 uppercase tracking-wide block mb-1">model</label>
+        <div className="flex items-center gap-1.5">
+          <Input
+            type="text"
+            placeholder={effective.model || 'global default'}
+            value={override.model ?? ''}
+            onChange={(e) => setField('model', e.target.value)}
+            className="bg-black/50 h-7 text-xs flex-1"
+          />
+          {override.model !== undefined && (
+            <button className="text-[10px] text-zinc-600 hover:text-zinc-400 shrink-0" onClick={() => clearField('model')}>
+              use global
+            </button>
+          )}
+        </div>
+      </div>
+
+      <div>
+        <label className="text-[10px] text-zinc-500 uppercase tracking-wide block mb-1">reasoning effort</label>
+        <div className="flex items-center gap-1.5">
+          <Select
+            value={override.reasoningEffort ?? '__inherit__'}
+            onValueChange={(val) => {
+              if (val === '__inherit__') {
+                clearField('reasoningEffort');
+              } else {
+                setField('reasoningEffort', val === '__default__' ? '' : val);
+              }
+            }}
+          >
+            <SelectTrigger className="bg-black/50 h-7 text-xs flex-1">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="__inherit__">use global</SelectItem>
+              <SelectItem value="__default__">default</SelectItem>
+              <SelectItem value="low">low</SelectItem>
+              <SelectItem value="medium">medium</SelectItem>
+              <SelectItem value="high">high</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+      </div>
+    </div>
+  );
+});
 
 const DRAFT_CACHE_KEY = 'ccm-chat-drafts';
 
@@ -905,8 +989,9 @@ function setDraftCache(sessionId: string, text: string) {
   localStorage.setItem(DRAFT_CACHE_KEY, JSON.stringify(cache));
 }
 
-const MessageInput = forwardRef<ChatInputHandle, MessageInputProps>(function MessageInput({ onSend, onCancel, sending, sessionId, projectPath }, ref) {
+const MessageInput = observer(forwardRef<ChatInputHandle, MessageInputProps>(function MessageInput({ onSend, onCancel, sending, sessionId, projectPath, tab }, ref) {
   const [text, setText] = useState(() => getDraftCache()[sessionId] || '');
+  const [showConfig, setShowConfig] = useState(false);
   const prevSessionIdRef = useRef(sessionId);
   if (prevSessionIdRef.current !== sessionId) {
     prevSessionIdRef.current = sessionId;
@@ -932,8 +1017,41 @@ const MessageInput = forwardRef<ChatInputHandle, MessageInputProps>(function Mes
     }
   };
 
+  const effective = tab.effectiveModelConfig;
+  const hasOverride = tab.modelConfigOverride !== null;
+  const configLabel = [
+    effective.model || null,
+    effective.reasoningEffort ? `effort:${effective.reasoningEffort}` : null,
+  ].filter(Boolean).join(' · ');
+
   return (
     <div className="p-3 border-t border-border">
+      <div className="flex items-center gap-2 mb-1.5">
+        <button
+          className={cn(
+            'flex items-center gap-1 px-1.5 py-0.5 text-[10px] border transition-colors',
+            hasOverride
+              ? 'border-zinc-500 text-zinc-300 bg-zinc-800/50'
+              : 'border-zinc-700 text-zinc-500 hover:text-zinc-400 hover:border-zinc-600'
+          )}
+          onClick={() => setShowConfig(!showConfig)}
+        >
+          <Settings2Icon className="h-3 w-3" />
+          {configLabel || 'model config'}
+          {hasOverride && <span className="text-zinc-400 ml-0.5">(override)</span>}
+        </button>
+        {hasOverride && (
+          <button
+            className="text-[10px] text-zinc-600 hover:text-zinc-400 transition-colors"
+            onClick={() => tab.setModelConfigOverride(null)}
+          >
+            reset to global
+          </button>
+        )}
+      </div>
+      {showConfig && (
+        <ChatConfigPanel tab={tab} onClose={() => setShowConfig(false)} />
+      )}
       <ChatInput
         ref={ref}
         value={text}
@@ -946,4 +1064,4 @@ const MessageInput = forwardRef<ChatInputHandle, MessageInputProps>(function Mes
       />
     </div>
   );
-});
+}));

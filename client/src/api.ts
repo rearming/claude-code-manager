@@ -93,6 +93,11 @@ export interface StreamCallbacks {
   onDone?: () => void;
 }
 
+export interface StreamModelConfig {
+  model?: string;
+  reasoningEffort?: string;
+}
+
 /**
  * Start a new session via SSE streaming.
  * Returns an abort function to cancel the request.
@@ -101,10 +106,15 @@ export function streamNewSession(
   message: string,
   projectPath: string,
   dangerouslySkipPermissions: boolean,
-  callbacks: StreamCallbacks
+  callbacks: StreamCallbacks,
+  modelConfig?: StreamModelConfig
 ): () => void {
   const { images, ...cbs } = callbacks;
-  return streamSSE(`${BASE}/sessions/new`, { message, projectPath, dangerouslySkipPermissions, images }, cbs);
+  return streamSSE(`${BASE}/sessions/new`, {
+    message, projectPath, dangerouslySkipPermissions, images,
+    model: modelConfig?.model || undefined,
+    reasoningEffort: modelConfig?.reasoningEffort || undefined,
+  }, cbs);
 }
 
 /**
@@ -115,10 +125,15 @@ export function streamMessageToSession(
   sessionId: string,
   message: string,
   dangerouslySkipPermissions: boolean,
-  callbacks: StreamCallbacks
+  callbacks: StreamCallbacks,
+  modelConfig?: StreamModelConfig
 ): () => void {
   const { images, ...cbs } = callbacks;
-  return streamSSE(`${BASE}/sessions/${sessionId}/send`, { message, dangerouslySkipPermissions, images }, cbs);
+  return streamSSE(`${BASE}/sessions/${sessionId}/send`, {
+    message, dangerouslySkipPermissions, images,
+    model: modelConfig?.model || undefined,
+    reasoningEffort: modelConfig?.reasoningEffort || undefined,
+  }, cbs);
 }
 
 /**

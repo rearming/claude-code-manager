@@ -1,6 +1,7 @@
 import { makeAutoObservable, runInAction } from 'mobx';
 import type { SessionDetail, ForkResult, ImageAttachment, ConversationMessage, ToolCallSummary } from '../types';
 import { fetchSessionDetail, resumeSession, forkSessionAt, streamMessageToSession, streamNewSession, fetchSessionStatus, subscribeToSession } from '../api';
+import type { ModelConfig } from './SessionStore';
 
 export interface StreamingToolCall {
   id?: string;
@@ -48,6 +49,9 @@ export class TabSession {
   terminalInput = '';
   lastRawEventTime = 0;
 
+  // Per-tab model config override (null = use global)
+  modelConfigOverride: Partial<ModelConfig> | null = null;
+
   // Per-tab action state
   resumeCommand: string | null = null;
   forkResult: ForkResult | null = null;
@@ -61,6 +65,7 @@ export class TabSession {
   private _getCustomName: (sessionId: string) => string | undefined;
   private _setCustomName: (sessionId: string, name: string) => void;
   private _onStreamEnd: (title: string, cost?: number) => void;
+  private _getGlobalModelConfig: () => ModelConfig;
   private _reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private _rawLinesPersistTimer: ReturnType<typeof setTimeout> | null = null;
   private _pendingCustomName: string | null = null;
@@ -73,6 +78,7 @@ export class TabSession {
     getCustomName: (sessionId: string) => string | undefined,
     setCustomName: (sessionId: string, name: string) => void,
     onStreamEnd: (title: string, cost?: number) => void,
+    getGlobalModelConfig: () => ModelConfig,
   ) {
     this.tabId = `tab-${nextTabId++}`;
     this.sessionId = sessionId;
@@ -81,17 +87,33 @@ export class TabSession {
     this._getCustomName = getCustomName;
     this._setCustomName = setCustomName;
     this._onStreamEnd = onStreamEnd;
-    makeAutoObservable<TabSession, '_onSessionsChanged' | '_getDangerouslySkipPermissions' | '_getCustomName' | '_setCustomName' | '_onStreamEnd' | '_reconnectTimer' | '_rawLinesPersistTimer' | '_pendingCustomName' | '_lastResultCost'>(this, {
+    this._getGlobalModelConfig = getGlobalModelConfig;
+    makeAutoObservable<TabSession, '_onSessionsChanged' | '_getDangerouslySkipPermissions' | '_getCustomName' | '_setCustomName' | '_onStreamEnd' | '_getGlobalModelConfig' | '_reconnectTimer' | '_rawLinesPersistTimer' | '_pendingCustomName' | '_lastResultCost'>(this, {
       _onSessionsChanged: false,
       _getDangerouslySkipPermissions: false,
       _getCustomName: false,
       _setCustomName: false,
       _onStreamEnd: false,
+      _getGlobalModelConfig: false,
       _reconnectTimer: false,
       _rawLinesPersistTimer: false,
       _pendingCustomName: false,
       _lastResultCost: false,
     });
+  }
+
+  /** Effective model config: per-chat override merged over global */
+  get effectiveModelConfig(): ModelConfig {
+    const global = this._getGlobalModelConfig();
+    if (!this.modelConfigOverride) return global;
+    return {
+      model: this.modelConfigOverride.model ?? global.model,
+      reasoningEffort: this.modelConfigOverride.reasoningEffort ?? global.reasoningEffort,
+    };
+  }
+
+  setModelConfigOverride(config: Partial<ModelConfig> | null) {
+    this.modelConfigOverride = config;
   }
 
   /** Display title for the tab */
@@ -332,6 +354,7 @@ export class TabSession {
     this.committedStreamingMessages = [];
 
     this._lastResultCost = undefined;
+    const mc = this.effectiveModelConfig;
     const abort = streamMessageToSession(sessionId, message, this._getDangerouslySkipPermissions(), {
       images: images,
       onText: (text) => { runInAction(() => { this.streamingText += text; }); },
@@ -363,7 +386,7 @@ export class TabSession {
           this.reloadSession(sessionId, true);
         });
       },
-    });
+    }, { model: mc.model, reasoningEffort: mc.reasoningEffort });
 
     this.abortStream = abort;
   }
@@ -382,6 +405,7 @@ export class TabSession {
     this.committedStreamingMessages = [];
 
     this._lastResultCost = undefined;
+    const mc = this.effectiveModelConfig;
     const abort = streamNewSession(message, projectPath, this._getDangerouslySkipPermissions(), {
       images: images,
       onInit: (data) => {
@@ -427,7 +451,7 @@ export class TabSession {
           }
         });
       },
-    });
+    }, { model: mc.model, reasoningEffort: mc.reasoningEffort });
 
     this.abortStream = abort;
   }

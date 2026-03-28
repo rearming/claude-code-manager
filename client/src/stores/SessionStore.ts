@@ -23,6 +23,11 @@ interface PanelLayout {
   terminalCollapsed: boolean;
 }
 
+export interface ModelConfig {
+  model: string;
+  reasoningEffort: '' | 'low' | 'medium' | 'high';
+}
+
 interface Settings {
   autoScrollOnNewMessages: boolean;
   dangerouslySkipPermissions: boolean;
@@ -33,6 +38,7 @@ interface Settings {
   projectFilter: string;
   showOpenTabsOnly: boolean;
   notifyOnStreamEnd: boolean;
+  modelConfig: ModelConfig;
 }
 
 const defaultPanelLayout: PanelLayout = {
@@ -42,6 +48,11 @@ const defaultPanelLayout: PanelLayout = {
   sidebarCollapsed: false,
   chatCollapsed: false,
   terminalCollapsed: false,
+};
+
+const defaultModelConfig: ModelConfig = {
+  model: '',
+  reasoningEffort: '',
 };
 
 const defaultSettings: Settings = {
@@ -54,6 +65,7 @@ const defaultSettings: Settings = {
   projectFilter: '',
   showOpenTabsOnly: false,
   notifyOnStreamEnd: false,
+  modelConfig: { ...defaultModelConfig },
 };
 
 function loadSettings(): Settings {
@@ -196,6 +208,7 @@ export class SessionStore {
       (sid: string) => this.customNames[sid],
       (sid: string, name: string) => this.renameSession(sid, name),
       (title: string, cost?: number) => this.showStreamEndNotification(title, cost),
+      () => this.modelConfig,
     );
   }
 
@@ -408,6 +421,15 @@ export class SessionStore {
   toggleGlobalShowDiffs() {
     this.settings.globalShowDiffs = !this.settings.globalShowDiffs;
     this.persistSettings();
+  }
+
+  setModelConfig(config: Partial<ModelConfig>) {
+    this.settings.modelConfig = { ...this.settings.modelConfig, ...config };
+    this.persistSettings();
+  }
+
+  get modelConfig(): ModelConfig {
+    return this.settings.modelConfig || { ...defaultModelConfig };
   }
 
   // ── Scroll positions ──────────────────────────────────────

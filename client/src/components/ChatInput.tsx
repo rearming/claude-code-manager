@@ -295,7 +295,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
   return (
     <div
       ref={containerRef}
-      className={`relative flex flex-col border border-input rounded-none ${dragOver ? 'bg-zinc-800/50 border-zinc-500' : 'bg-black/50'}`}
+      className={`relative flex flex-col border border-input rounded-none overflow-visible ${dragOver ? 'bg-zinc-800/50 border-zinc-500' : 'bg-black/50'}`}
       style={height ? { height } : undefined}
       onDrop={handleDrop}
       onDragOver={handleDragOver}
