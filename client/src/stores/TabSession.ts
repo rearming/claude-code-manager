@@ -42,7 +42,8 @@ export class TabSession {
   pendingUserMessage: string | null = null;
   pendingImages: ImageAttachment[] | null = null;
   scrollToBottomOnLoad = false;
-  stickToBottom = false;
+  scrollToBottomRequested = 0;
+  streamingTick = 0;
 
   // Terminal state
   rawLines: string[] = [];
@@ -150,6 +151,7 @@ export class TabSession {
   }
 
   private processStreamEvent(event: Record<string, unknown>) {
+    this.streamingTick++;
     if (event.type === 'content_block_start') {
       const block = (event as { content_block?: { type: string; id?: string; name?: string }; index?: number }).content_block;
       if (block?.type === 'tool_use' && block.name) {
@@ -525,8 +527,8 @@ export class TabSession {
     this.forkResult = null;
   }
 
-  setStickToBottom(value: boolean) {
-    this.stickToBottom = value;
+  requestScrollToBottom() {
+    this.scrollToBottomRequested++;
   }
 
   private showReconnectionBanner(sessionId: string) {

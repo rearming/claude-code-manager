@@ -39,6 +39,7 @@ interface Settings {
   showOpenTabsOnly: boolean;
   notifyOnStreamEnd: boolean;
   modelConfig: ModelConfig;
+  stickToBottom: boolean;
 }
 
 const defaultPanelLayout: PanelLayout = {
@@ -66,6 +67,7 @@ const defaultSettings: Settings = {
   showOpenTabsOnly: false,
   notifyOnStreamEnd: false,
   modelConfig: { ...defaultModelConfig },
+  stickToBottom: false,
 };
 
 function loadSettings(): Settings {
@@ -420,6 +422,11 @@ export class SessionStore {
 
   toggleGlobalShowDiffs() {
     this.settings.globalShowDiffs = !this.settings.globalShowDiffs;
+    this.persistSettings();
+  }
+
+  toggleStickToBottom() {
+    this.settings.stickToBottom = !this.settings.stickToBottom;
     this.persistSettings();
   }
 

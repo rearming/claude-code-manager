@@ -4,7 +4,7 @@ import Markdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import rehypeHighlight from 'rehype-highlight';
 import 'highlight.js/styles/github-dark.min.css';
-import { GitFork, Copy, ChevronDown, ChevronRight, ArrowDown, ArrowDownToLine, X, Pencil, Download, ClipboardCopy, MessageSquarePlus, Brain, Settings2 as Settings2Icon } from 'lucide-react';
+import { GitFork, Copy, ChevronDown, ChevronRight, X, Pencil, Download, ClipboardCopy, MessageSquarePlus, Brain, Settings2 as Settings2Icon } from 'lucide-react';
 import { cn } from '@/components/shadcn/lib/utils';
 import { Button } from '@/components/shadcn/ui/button';
 import { Input } from '@/components/shadcn/ui/input';
@@ -40,7 +40,6 @@ export const SessionDetail = observer(({ store, tab }: Props) => {
 
   const { summary, messages } = detail;
   const containerRef = useRef<HTMLDivElement>(null);
-  const [showScrollButton, setShowScrollButton] = useState(false);
   const wasNearBottomRef = useRef(true);
   const isStale = useStaleStreamDetector(tab);
 
@@ -83,19 +82,18 @@ export const SessionDetail = observer(({ store, tab }: Props) => {
   const handleScroll = useCallback(() => {
     const el = containerRef.current;
     if (!el) return;
-    const nearBottom = isNearBottom();
-    wasNearBottomRef.current = nearBottom;
-    setShowScrollButton(!nearBottom);
+    wasNearBottomRef.current = isNearBottom();
     store.saveScrollPosition(summary.sessionId, el.scrollTop, messages.length);
   }, [store, summary.sessionId, isNearBottom, messages.length]);
 
   useEffect(() => {
-    if (!tab.sending || !store.settings.autoScrollOnNewMessages) return;
+    if (!tab.sending) return;
+    if (!store.settings.autoScrollOnNewMessages && !store.settings.stickToBottom) return;
     const el = containerRef.current;
-    if (el && (wasNearBottomRef.current || tab.stickToBottom)) {
+    if (el && (wasNearBottomRef.current || store.settings.stickToBottom)) {
       el.scrollTop = el.scrollHeight;
     }
-  }, [tab.streamingText, tab.streamingToolCalls.length, tab.streamingBlocks.length, tab.committedStreamingMessages.length, tab.sending, store.settings.autoScrollOnNewMessages, tab.stickToBottom]);
+  }, [tab.streamingTick, tab.sending, store.settings.autoScrollOnNewMessages, store.settings.stickToBottom]);
 
   useEffect(() => {
     if (tab.pendingUserMessage && store.settings.autoScrollOnNewMessages) {
@@ -103,6 +101,12 @@ export const SessionDetail = observer(({ store, tab }: Props) => {
       requestAnimationFrame(() => scrollToBottom(false));
     }
   }, [tab.pendingUserMessage, store.settings.autoScrollOnNewMessages, scrollToBottom]);
+
+  useEffect(() => {
+    if (tab.scrollToBottomRequested > 0) {
+      scrollToBottom();
+    }
+  }, [tab.scrollToBottomRequested, scrollToBottom]);
 
   const messageInputRef = useRef<ChatInputHandle>(null);
 
@@ -288,35 +292,6 @@ export const SessionDetail = observer(({ store, tab }: Props) => {
           )}
         </div>
 
-        {(showScrollButton || tab.stickToBottom) && (
-          <div className="absolute bottom-4 right-4 flex gap-1">
-            <button
-              className={cn(
-                "h-8 w-8 border border-border flex items-center justify-center transition-colors",
-                tab.stickToBottom
-                  ? "bg-zinc-600 hover:bg-zinc-500"
-                  : "bg-zinc-800 hover:bg-zinc-700"
-              )}
-              onClick={() => {
-                const willEnable = !tab.stickToBottom;
-                tab.setStickToBottom(willEnable);
-                if (willEnable) scrollToBottom();
-              }}
-              title={tab.stickToBottom ? "disable auto-scroll" : "enable continuous auto-scroll"}
-            >
-              <ArrowDownToLine className="h-4 w-4 text-zinc-400" />
-            </button>
-            {showScrollButton && !tab.stickToBottom && (
-              <button
-                className="h-8 w-8 bg-zinc-800 border border-border flex items-center justify-center hover:bg-zinc-700 transition-colors"
-                onClick={() => scrollToBottom()}
-                title="scroll to bottom"
-              >
-                <ArrowDown className="h-4 w-4 text-zinc-400" />
-              </button>
-            )}
-          </div>
-        )}
       </div>
 
       <MessageInput

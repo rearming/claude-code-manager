@@ -3,7 +3,7 @@ import { observer } from 'mobx-react-lite';
 import Markdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import rehypeHighlight from 'rehype-highlight';
-import { Plus, Terminal, Settings, ChevronDown, ChevronRight, Diff, PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen } from 'lucide-react';
+import { Plus, Terminal, Settings, ChevronDown, ChevronRight, Diff, ArrowDownToLine } from 'lucide-react';
 import { Button } from '@/components/shadcn/ui/button';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/shadcn/ui/tooltip';
 import { ResizablePanelGroup, ResizablePanel, ResizableHandle, usePanelRef } from '@/components/shadcn/ui/resizable';
@@ -51,27 +51,6 @@ export const Layout = observer(({ store }: Props) => {
     store.setTerminalCollapsed(size.asPercentage === 0);
   }, [store]);
 
-  const toggleSidebarCollapse = useCallback(() => {
-    const panel = sidebarPanelRef.current;
-    if (!panel) return;
-    if (panel.isCollapsed()) panel.expand();
-    else panel.collapse();
-  }, [sidebarPanelRef]);
-
-  const toggleChatCollapse = useCallback(() => {
-    const panel = chatPanelRef.current;
-    if (!panel) return;
-    if (panel.isCollapsed()) panel.expand();
-    else panel.collapse();
-  }, [chatPanelRef]);
-
-  const toggleTerminalCollapse = useCallback(() => {
-    const panel = terminalPanelRef.current;
-    if (!panel) return;
-    if (panel.isCollapsed()) panel.expand();
-    else panel.collapse();
-  }, [terminalPanelRef]);
-
   const sidebarPctNoTerminal = layout.sidebarSize / (layout.sidebarSize + layout.chatSize) * 100;
   const chatPctNoTerminal = layout.chatSize / (layout.sidebarSize + layout.chatSize) * 100;
 
@@ -81,13 +60,7 @@ export const Layout = observer(({ store }: Props) => {
       <main className="flex-1 overflow-hidden">
         <MainContent store={store} activeTab={activeTab} showNewSessionStreaming={!!showNewSessionStreaming} />
       </main>
-      <BottomToolbar
-        store={store}
-        showTerminal={store.showTerminal}
-        toggleSidebarCollapse={toggleSidebarCollapse}
-        toggleChatCollapse={store.showTerminal ? toggleChatCollapse : undefined}
-        toggleTerminalCollapse={store.showTerminal ? toggleTerminalCollapse : undefined}
-      />
+      <BottomToolbar store={store} />
     </div>
   );
 
@@ -247,14 +220,9 @@ const EmptyState = () => (
 
 interface BottomToolbarProps {
   store: SessionStore;
-  showTerminal: boolean;
-  toggleSidebarCollapse: () => void;
-  toggleChatCollapse?: () => void;
-  toggleTerminalCollapse?: () => void;
 }
 
-const BottomToolbar = observer(({ store, showTerminal, toggleSidebarCollapse, toggleChatCollapse, toggleTerminalCollapse }: BottomToolbarProps) => {
-  const { sidebarCollapsed, chatCollapsed, terminalCollapsed } = store.panelLayout;
+const BottomToolbar = observer(({ store }: BottomToolbarProps) => {
   const activeTab = store.activeTab;
 
   return (
@@ -278,32 +246,21 @@ const BottomToolbar = observer(({ store, showTerminal, toggleSidebarCollapse, to
         </Button>
         <Tooltip>
           <TooltipTrigger asChild>
-            <Button size="sm" variant="outline" onClick={toggleSidebarCollapse}>
-              {sidebarCollapsed ? <PanelLeftOpen className="h-3 w-3" /> : <PanelLeftClose className="h-3 w-3" />}
+            <Button
+              size="sm"
+              variant={store.settings.stickToBottom ? 'default' : 'outline'}
+              onClick={() => {
+                const willEnable = !store.settings.stickToBottom;
+                store.toggleStickToBottom();
+                if (willEnable && activeTab) activeTab.requestScrollToBottom();
+              }}
+            >
+              <ArrowDownToLine className="h-3 w-3 mr-1" />
+              scroll
             </Button>
           </TooltipTrigger>
-          <TooltipContent>{sidebarCollapsed ? 'expand sidebar' : 'collapse sidebar'}</TooltipContent>
+          <TooltipContent>{store.settings.stickToBottom ? 'disable forced scroll' : 'enable forced scroll'}</TooltipContent>
         </Tooltip>
-        {showTerminal && toggleChatCollapse && (
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button size="sm" variant="outline" onClick={toggleChatCollapse}>
-                {chatCollapsed ? <PanelLeftOpen className="h-3 w-3" /> : <PanelLeftClose className="h-3 w-3" />}
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent>{chatCollapsed ? 'expand chat' : 'collapse chat'}</TooltipContent>
-          </Tooltip>
-        )}
-        {showTerminal && toggleTerminalCollapse && (
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button size="sm" variant="outline" onClick={toggleTerminalCollapse}>
-                {terminalCollapsed ? <PanelRightOpen className="h-3 w-3" /> : <PanelRightClose className="h-3 w-3" />}
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent>{terminalCollapsed ? 'expand terminal' : 'collapse terminal'}</TooltipContent>
-          </Tooltip>
-        )}
         <TabTray store={store} />
       </div>
       <div className="text-zinc-500">
