@@ -1,3 +1,4 @@
+import { useState, useRef, useEffect, useCallback } from 'react';
 import { Archive, ArchiveRestore, GitBranch, GitFork } from 'lucide-react';
 import type { SessionSummary } from '../types';
 
@@ -11,6 +12,7 @@ interface Props {
   customName?: string;
   onClick: () => void;
   onArchive?: () => void;
+  onRename?: (name: string) => void;
 }
 
 function formatDate(ts: number): string {
@@ -34,9 +36,32 @@ function truncate(text: string, maxLen: number): string {
   return text.slice(0, maxLen) + '...';
 }
 
-export function SessionCard({ session, isSelected, status, isArchived, customName, onClick, onArchive }: Props) {
+export function SessionCard({ session, isSelected, status, isArchived, customName, onClick, onArchive, onRename }: Props) {
   const title = customName
     || (session.slug ? session.slug.replaceAll('-', ' ') : truncate(session.firstMessage, 60));
+
+  const [editing, setEditing] = useState(false);
+  const [editValue, setEditValue] = useState('');
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (editing) inputRef.current?.select();
+  }, [editing]);
+
+  const startRename = useCallback(() => {
+    setEditValue(title || '');
+    setEditing(true);
+  }, [title]);
+
+  const commitRename = useCallback(() => {
+    setEditing(false);
+    if (onRename) onRename(editValue.trim());
+  }, [editValue, onRename]);
+
+  const cancelRename = useCallback(() => {
+    setEditing(false);
+    setEditValue('');
+  }, []);
 
   const borderColor = status === 'streaming'
     ? 'border-l-green-500'
@@ -52,7 +77,30 @@ export function SessionCard({ session, isSelected, status, isArchived, customNam
       onClick={onClick}
     >
       <div className="flex items-center gap-2">
-        <div className="text-sm font-medium text-zinc-200 truncate flex-1">{title || 'untitled session'}</div>
+        {editing ? (
+          <input
+            ref={inputRef}
+            className="text-sm font-medium text-zinc-200 bg-zinc-800 border border-zinc-600 px-1.5 py-0.5 rounded-none outline-none focus:ring-0 flex-1 min-w-0"
+            value={editValue}
+            onChange={(e) => setEditValue(e.target.value)}
+            onBlur={commitRename}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') commitRename();
+              if (e.key === 'Escape') cancelRename();
+            }}
+            onClick={(e) => e.stopPropagation()}
+          />
+        ) : (
+          <div
+            className="text-sm font-medium text-zinc-200 truncate flex-1"
+            onDoubleClick={(e) => {
+              e.stopPropagation();
+              if (onRename) startRename();
+            }}
+          >
+            {title || 'untitled session'}
+          </div>
+        )}
         {onArchive && (
           <button
             className="shrink-0 opacity-0 group-hover:opacity-100 transition-opacity p-0.5 rounded hover:bg-zinc-700 text-zinc-500 hover:text-zinc-300"

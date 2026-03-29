@@ -62,6 +62,7 @@ export const SessionList = observer(({ store }: Props) => {
                   isArchived={store.isArchived(session.sessionId)}
                   customName={store.getCustomName(session.sessionId)}
                   onClick={() => store.openTab(session.sessionId)}
+                  onRename={(name) => store.renameSession(session.sessionId, name)}
                   onArchive={() =>
                     store.isArchived(session.sessionId)
                       ? store.unarchiveSession(session.sessionId)

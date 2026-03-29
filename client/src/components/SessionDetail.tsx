@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect, useCallback, forwardRef } from 'react';
 import { observer } from 'mobx-react-lite';
+import { reaction } from 'mobx';
 import Markdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import rehypeHighlight from 'rehype-highlight';
@@ -88,13 +89,18 @@ export const SessionDetail = observer(({ store, tab }: Props) => {
   }, [store, summary.sessionId, isNearBottom, messages.length]);
 
   useEffect(() => {
-    if (!tab.sending) return;
-    if (!store.settings.autoScrollOnNewMessages && !store.settings.stickToBottom) return;
-    const el = containerRef.current;
-    if (el && (wasNearBottomRef.current || store.settings.stickToBottom)) {
-      el.scrollTop = el.scrollHeight;
-    }
-  }, [tab.streamingTick, tab.sending, store.settings.autoScrollOnNewMessages, store.settings.stickToBottom]);
+    return reaction(
+      () => tab.streamingTick,
+      () => {
+        if (!tab.sending) return;
+        if (!store.settings.autoScrollOnNewMessages && !store.settings.stickToBottom) return;
+        const el = containerRef.current;
+        if (el && (wasNearBottomRef.current || store.settings.stickToBottom)) {
+          el.scrollTop = el.scrollHeight;
+        }
+      }
+    );
+  }, [tab, store]);
 
   useEffect(() => {
     if (tab.pendingUserMessage && store.settings.autoScrollOnNewMessages) {
