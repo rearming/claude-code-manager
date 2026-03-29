@@ -8,6 +8,7 @@ import { GitFork, Copy, ChevronDown, ChevronRight, X, Pencil, Download, Clipboar
 import { cn } from '@/components/shadcn/lib/utils';
 import { Button } from '@/components/shadcn/ui/button';
 import { Input } from '@/components/shadcn/ui/input';
+import { ChangedFilesPanel } from './ChangedFilesPanel';
 import {
   Select,
   SelectContent,
@@ -195,6 +196,9 @@ export const SessionDetail = observer(({ store, tab }: Props) => {
           <span className="text-xs text-green-400">reconnected to active stream</span>
         </div>
       )}
+
+      {/* changed files */}
+      <ChangedFilesPanel tracker={tab.fileChanges} />
 
       {/* messages */}
       <div className="flex-1 relative overflow-hidden">
@@ -987,8 +991,10 @@ const MessageInput = observer(forwardRef<ChatInputHandle, MessageInputProps>(fun
   const handleCancel = () => {
     const restored = onCancel();
     if (restored) {
-      setText(restored);
-      setDraftCache(sessionId, restored);
+      const current = text.trim();
+      const combined = current ? `${restored}\n${current}` : restored;
+      setText(combined);
+      setDraftCache(sessionId, combined);
     }
   };
 

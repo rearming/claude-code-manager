@@ -4,8 +4,8 @@ import { fetchSessions } from '../api';
 import { TabSession } from './TabSession';
 
 // Re-export for components that import from here
-export type { StreamingToolCall, StreamingBlock } from './TabSession';
-export { TabSession } from './TabSession';
+export type { StreamingToolCall, StreamingBlock, TrackedFileChange, FileChangeType } from './TabSession';
+export { TabSession, FileChangeTracker } from './TabSession';
 
 const SETTINGS_KEY = 'ccm-settings';
 const SCROLL_POSITIONS_KEY = 'ccm-scroll-positions';
@@ -13,6 +13,7 @@ const ARCHIVED_SESSIONS_KEY = 'ccm-archived-sessions';
 const OPEN_TABS_KEY = 'ccm-open-tabs';
 const CUSTOM_NAMES_KEY = 'ccm-custom-names';
 const TAB_WIDTHS_KEY = 'ccm-tab-widths';
+const COLLAPSED_PROJECTS_KEY = 'ccm-collapsed-projects';
 
 interface PanelLayout {
   sidebarSize: number;
@@ -115,6 +116,15 @@ function loadTabWidths(): Record<string, number> {
   }
 }
 
+function loadCollapsedProjects(): Set<string> {
+  try {
+    const raw = localStorage.getItem(COLLAPSED_PROJECTS_KEY);
+    return raw ? new Set(JSON.parse(raw)) : new Set();
+  } catch {
+    return new Set();
+  }
+}
+
 function loadOpenTabs(): { tabSessionIds: string[]; activeTabId: string | null; minimizedTabIds: string[] } {
   try {
     const raw = sessionStorage.getItem(OPEN_TABS_KEY);
@@ -155,6 +165,7 @@ export class SessionStore {
   // ── Custom names & tab widths (persisted per sessionId) ──
   customNames: Record<string, string> = loadCustomNames();
   tabWidths: Record<string, number> = loadTabWidths();
+  collapsedProjects: Set<string> = loadCollapsedProjects();
 
   constructor() {
     makeAutoObservable(this);
@@ -571,6 +582,21 @@ export class SessionStore {
     return this.archivedSessionIds.has(sessionId);
   }
 
+  // ── Collapsed projects ──────────────────────────────────────
+
+  toggleProjectCollapsed(project: string) {
+    if (this.collapsedProjects.has(project)) {
+      this.collapsedProjects.delete(project);
+    } else {
+      this.collapsedProjects.add(project);
+    }
+    this.persistCollapsedProjects();
+  }
+
+  isProjectCollapsed(project: string): boolean {
+    return this.collapsedProjects.has(project);
+  }
+
   // ── Custom names ────────────────────────────────────────────
 
   renameSession(sessionId: string, name: string) {
@@ -669,6 +695,10 @@ export class SessionStore {
 
   private persistTabWidths() {
     localStorage.setItem(TAB_WIDTHS_KEY, JSON.stringify(this.tabWidths));
+  }
+
+  private persistCollapsedProjects() {
+    localStorage.setItem(COLLAPSED_PROJECTS_KEY, JSON.stringify([...this.collapsedProjects]));
   }
 
   private persistTabs() {

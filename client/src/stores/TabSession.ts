@@ -3,6 +3,179 @@ import type { SessionDetail, ForkResult, ImageAttachment, ConversationMessage, T
 import { fetchSessionDetail, resumeSession, forkSessionAt, streamMessageToSession, streamNewSession, fetchSessionStatus, subscribeToSession } from '../api';
 import type { ModelConfig } from './SessionStore';
 
+// ── File change tracking ──────────────────────────────────
+
+const ACKNOWLEDGED_FILES_KEY = 'ccm-acknowledged-files';
+
+export type FileChangeType = 'created' | 'edited';
+
+export interface TrackedFileChange {
+  filePath: string;
+  changeType: FileChangeType;
+  /** Number of times this file was touched in the session */
+  touchCount: number;
+  /** Timestamp of last change */
+  lastChanged: string;
+}
+
+function loadAcknowledgedFiles(): Record<string, string[]> {
+  try {
+    const raw = localStorage.getItem(ACKNOWLEDGED_FILES_KEY);
+    return raw ? JSON.parse(raw) : {};
+  } catch {
+    return {};
+  }
+}
+
+function saveAcknowledgedFiles(data: Record<string, string[]>) {
+  localStorage.setItem(ACKNOWLEDGED_FILES_KEY, JSON.stringify(data));
+}
+
+/** Extracts file paths from tool calls that modify files */
+function extractFileChanges(toolCalls: ToolCallSummary[]): Array<{ filePath: string; changeType: FileChangeType }> {
+  const changes: Array<{ filePath: string; changeType: FileChangeType }> = [];
+  for (const tc of toolCalls) {
+    const filePath = tc.input.file_path as string | undefined;
+    if (!filePath) continue;
+    if (tc.name === 'Write') {
+      changes.push({ filePath, changeType: 'created' });
+    } else if (tc.name === 'Edit' || tc.name === 'MultiEdit') {
+      changes.push({ filePath, changeType: 'edited' });
+    }
+  }
+  return changes;
+}
+
+export class FileChangeTracker {
+  /** All files changed in this session: filePath → TrackedFileChange */
+  allChanges: Map<string, TrackedFileChange> = new Map();
+  /** Set of file paths the user has acknowledged */
+  acknowledgedFiles: Set<string> = new Set();
+
+  private _sessionId: string | null = null;
+
+  constructor() {
+    makeAutoObservable(this);
+  }
+
+  /** Bind to a session and load persisted acknowledged files */
+  bindSession(sessionId: string) {
+    this._sessionId = sessionId;
+    const stored = loadAcknowledgedFiles();
+    const acked = stored[sessionId];
+    if (acked) {
+      this.acknowledgedFiles = new Set(acked);
+    }
+  }
+
+  /** Track a file change */
+  trackChange(filePath: string, changeType: FileChangeType, timestamp?: string) {
+    const existing = this.allChanges.get(filePath);
+    if (existing) {
+      existing.touchCount++;
+      if (changeType === 'edited' && existing.changeType === 'created') {
+        // keep as 'created' — initial creation is more significant
+      } else {
+        existing.changeType = changeType;
+      }
+      existing.lastChanged = timestamp || new Date().toISOString();
+    } else {
+      this.allChanges.set(filePath, {
+        filePath,
+        changeType,
+        touchCount: 1,
+        lastChanged: timestamp || new Date().toISOString(),
+      });
+    }
+  }
+
+  /** Process tool calls from a message to extract file changes */
+  processMessage(msg: ConversationMessage) {
+    if (!msg.toolCalls) return;
+    const changes = extractFileChanges(msg.toolCalls);
+    for (const c of changes) {
+      this.trackChange(c.filePath, c.changeType, msg.timestamp);
+    }
+    // Also check subagent tool calls
+    if (msg.subagentToolCalls) {
+      const subChanges = extractFileChanges(msg.subagentToolCalls);
+      for (const c of subChanges) {
+        this.trackChange(c.filePath, c.changeType, msg.timestamp);
+      }
+    }
+  }
+
+  /** Process a streaming tool call */
+  processStreamingToolCall(tc: { name: string; input: Record<string, unknown> }) {
+    const filePath = tc.input.file_path as string | undefined;
+    if (!filePath) return;
+    if (tc.name === 'Write') {
+      this.trackChange(filePath, 'created');
+    } else if (tc.name === 'Edit' || tc.name === 'MultiEdit') {
+      this.trackChange(filePath, 'edited');
+    }
+  }
+
+  /** Acknowledge a single file */
+  acknowledge(filePath: string) {
+    this.acknowledgedFiles.add(filePath);
+    this._persist();
+  }
+
+  /** Acknowledge all current pending files */
+  acknowledgeAll() {
+    for (const [path] of this.allChanges) {
+      this.acknowledgedFiles.add(path);
+    }
+    this._persist();
+  }
+
+  /** Files not yet acknowledged */
+  get pendingFiles(): TrackedFileChange[] {
+    const result: TrackedFileChange[] = [];
+    for (const [path, change] of this.allChanges) {
+      if (!this.acknowledgedFiles.has(path)) {
+        result.push(change);
+      }
+    }
+    return result;
+  }
+
+  get pendingCount(): number {
+    return this.pendingFiles.length;
+  }
+
+  /** All acknowledged files */
+  get acknowledgedFilesList(): TrackedFileChange[] {
+    const result: TrackedFileChange[] = [];
+    for (const [path, change] of this.allChanges) {
+      if (this.acknowledgedFiles.has(path)) {
+        result.push(change);
+      }
+    }
+    return result;
+  }
+
+  /** All files as a flat list */
+  get allFilesList(): TrackedFileChange[] {
+    return Array.from(this.allChanges.values());
+  }
+
+  /** Reset tracker for a new session */
+  reset() {
+    this.allChanges.clear();
+    this.acknowledgedFiles.clear();
+    this._sessionId = null;
+  }
+
+  private _persist() {
+    if (!this._sessionId) return;
+    const stored = loadAcknowledgedFiles();
+    stored[this._sessionId] = Array.from(this.acknowledgedFiles);
+    saveAcknowledgedFiles(stored);
+  }
+}
+
 export interface StreamingToolCall {
   id?: string;
   name: string;
@@ -59,6 +232,9 @@ export class TabSession {
   forking = false;
   error: string | null = null;
   reconnectedSessionId: string | null = null;
+
+  // File change tracking
+  fileChanges = new FileChangeTracker();
 
   // Callbacks to parent store
   private _onSessionsChanged: () => void;
@@ -214,16 +390,21 @@ export class TabSession {
         }
         const text = textParts.join('\n');
         if (text || toolCalls.length > 0) {
+          const timestamp = (event.timestamp as string) || new Date().toISOString();
           this.committedStreamingMessages.push({
             uuid: (event.uuid as string) || `streaming-${Date.now()}-${this.committedStreamingMessages.length}`,
             parentUuid: (event.parentUuid as string) || null,
             type: 'assistant',
-            timestamp: (event.timestamp as string) || new Date().toISOString(),
+            timestamp,
             content: text,
             model: msg.model,
             toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
             isSidechain: false,
           });
+          // Track file changes from streaming tool calls
+          for (const tc of toolCalls) {
+            this.fileChanges.processStreamingToolCall(tc);
+          }
         }
         this.streamingText = '';
         this.streamingBlocks = [];
@@ -260,6 +441,12 @@ export class TabSession {
       runInAction(() => {
         this.selectedDetail = detail;
         this.detailLoading = false;
+        // Scan all messages for file changes
+        this.fileChanges.reset();
+        this.fileChanges.bindSession(sessionId);
+        for (const msg of detail.messages) {
+          this.fileChanges.processMessage(msg);
+        }
       });
       if (!this.sending) {
         this.tryReconnectToStream(sessionId);
@@ -413,6 +600,8 @@ export class TabSession {
       onInit: (data) => {
         runInAction(() => {
           this.sessionId = data.sessionId;
+          this.fileChanges.reset();
+          this.fileChanges.bindSession(data.sessionId);
           if (this._pendingCustomName) {
             this._setCustomName(data.sessionId, this._pendingCustomName);
             this._pendingCustomName = null;
