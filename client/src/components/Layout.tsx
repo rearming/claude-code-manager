@@ -290,7 +290,7 @@ const NewSessionStreamingView = observer(({ store, tab }: { store: SessionStore;
             <span className="text-xs font-bold text-zinc-300 uppercase tracking-wide">you</span>
             <span className="text-xs text-zinc-500">just now</span>
           </div>
-          <div className="text-sm text-zinc-300">{tab.pendingUserMessage}</div>
+          <div className="text-sm text-zinc-300 whitespace-pre-wrap">{tab.pendingUserMessage}</div>
         </div>
       )}
 

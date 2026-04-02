@@ -237,7 +237,7 @@ export const SessionDetail = observer(({ store, tab }: Props) => {
                   ))}
                 </div>
               )}
-              <div className="text-sm text-zinc-300">{tab.pendingUserMessage}</div>
+              <div className="text-sm text-zinc-300 whitespace-pre-wrap">{tab.pendingUserMessage}</div>
             </div>
           )}
 
