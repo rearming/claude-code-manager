@@ -288,17 +288,8 @@ export const SessionDetail = observer(({ store, tab }: Props) => {
           )}
 
           {isStale && (
-            <div className="p-3 border border-yellow-800 bg-yellow-900/20 mx-6 mt-2">
-              <div className="text-xs text-yellow-400">
-                no events received for 30s — the session may be waiting for permission approval or is stalled.
-              </div>
-              <div className="flex gap-2 mt-2">
-                <Button size="sm" variant="outline" className="text-xs" onClick={() => tab.cancelSend()}>cancel</Button>
-                <Button size="sm" variant="outline" className="text-xs" onClick={() => {
-                  tab.cancelSend();
-                  tab.reloadSession(summary.sessionId);
-                }}>cancel &amp; reload</Button>
-              </div>
+            <div className="px-3 py-2 mx-6 mt-2">
+              <span className="text-xs text-zinc-500">taking a bit long — may be processing a large context or waiting for permission approval</span>
             </div>
           )}
         </div>
