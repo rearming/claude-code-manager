@@ -534,7 +534,7 @@ export class TabSession {
   sendMessage(sessionId: string, message: string, images?: ImageAttachment[]) {
     this.sending = true;
     this.streamingText = '';
-    this.pendingUserMessage = message;
+    this.pendingUserMessage = message || null;
     this.pendingImages = images || null;
     this.error = null;
     this.clearRawLines();
@@ -653,10 +653,17 @@ export class TabSession {
       this.abortStream();
       this.abortStream = null;
       this.sending = false;
+      this.pendingUserMessage = null;
+      this.pendingImages = null;
       this.streamingText = '';
       this.streamingToolCalls = [];
       this.streamingBlocks = [];
       this.committedStreamingMessages = [];
+      // Reload to show actual conversation state after abort
+      const sid = this.sessionId;
+      if (sid) {
+        this.reloadSession(sid, true);
+      }
       return message;
     }
     return null;

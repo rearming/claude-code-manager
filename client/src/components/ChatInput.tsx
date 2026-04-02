@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback, useImperativeHandle, forwardRef, useEffect } from 'react';
-import { Send, X, ImagePlus, AtSign } from 'lucide-react';
+import { Send, Play, X, ImagePlus, AtSign } from 'lucide-react';
 import { Button } from '@/components/shadcn/ui/button';
 import { FileMentionDropdown } from './FileMentionDropdown';
 import type { ImageAttachment } from '../types';
@@ -32,6 +32,7 @@ interface ChatInputProps {
   disabled?: boolean;
   placeholder?: string;
   submitLabel?: string;
+  lastMessageIsUser?: boolean;
   rows?: number;
   onKeyDown?: (e: React.KeyboardEvent) => void;
   projectPath?: string;
@@ -52,6 +53,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
   disabled = false,
   placeholder = 'send a message... (paste/drop images, enter to send)',
   submitLabel = 'send',
+  lastMessageIsUser = false,
   rows = 2,
   onKeyDown: externalKeyDown,
   projectPath,
@@ -139,8 +141,10 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
   const handleSubmit = () => {
     if (mention.active) return; // don't submit while mention is open
     const trimmed = value.trim();
-    if ((!trimmed && images.length === 0) || sending || disabled) return;
-    onSubmit(trimmed || '(image)', images.length > 0 ? images : undefined);
+    const hasContent = trimmed || images.length > 0;
+    const canRun = !hasContent && lastMessageIsUser;
+    if ((!hasContent && !canRun) || sending || disabled) return;
+    onSubmit(trimmed || (images.length > 0 ? '(image)' : ''), images.length > 0 ? images : undefined);
     setImages([]);
   };
 
@@ -244,7 +248,9 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
     });
   }, [value, onChange, projectPath]);
 
-  const canSubmit = (value.trim() || images.length > 0) && !sending && !disabled;
+  const hasContent = !!(value.trim() || images.length > 0);
+  const canRun = !hasContent && lastMessageIsUser;
+  const canSubmit = (hasContent || canRun) && !sending && !disabled;
 
   const STORAGE_KEY = 'chat-input-height';
   const [height, setHeight] = useState<number | null>(() => {
@@ -388,8 +394,11 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
           </Button>
         ) : (
           <Button variant="outline" size="sm" onClick={handleSubmit} disabled={!canSubmit}>
-            <Send className="h-3.5 w-3.5 mr-1" />
-            {submitLabel}
+            {canRun && !hasContent ? (
+              <><Play className="h-3.5 w-3.5 mr-1" />run</>
+            ) : (
+              <><Send className="h-3.5 w-3.5 mr-1" />{submitLabel}</>
+            )}
           </Button>
         )}
       </div>

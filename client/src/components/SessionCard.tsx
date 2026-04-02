@@ -10,6 +10,7 @@ interface Props {
   status?: SessionStatus;
   isArchived?: boolean;
   customName?: string;
+  projectLabel?: string;
   onClick: () => void;
   onArchive?: () => void;
   onRename?: (name: string) => void;
@@ -36,7 +37,7 @@ function truncate(text: string, maxLen: number): string {
   return text.slice(0, maxLen) + '...';
 }
 
-export function SessionCard({ session, isSelected, status, isArchived, customName, onClick, onArchive, onRename }: Props) {
+export function SessionCard({ session, isSelected, status, isArchived, customName, projectLabel, onClick, onArchive, onRename }: Props) {
   const title = customName
     || (session.slug ? session.slug.replaceAll('-', ' ') : truncate(session.firstMessage, 60));
 
@@ -140,6 +141,9 @@ export function SessionCard({ session, isSelected, status, isArchived, customNam
           </>
         )}
       </div>
+      {projectLabel && (
+        <div className="text-[10px] text-zinc-600 mt-1 truncate">{projectLabel}</div>
+      )}
     </div>
   );
 }

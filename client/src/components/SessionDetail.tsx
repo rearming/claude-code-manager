@@ -28,6 +28,7 @@ import { ChatInput } from './ChatInput';
 import type { ChatInputHandle } from './ChatInput';
 import type { DrawCommand } from './AnnotationCanvas';
 import { cacheImage, saveAnnotatedImage } from '../api';
+import { sessionStore as globalSessionStore } from '../stores/SessionStore';
 import type { SessionStore, StreamingToolCall, StreamingBlock, TabSession } from '../stores/SessionStore';
 import type { ConversationMessage, ToolCallSummary, ImageAttachment } from '../types';
 
@@ -635,7 +636,7 @@ function MessageBubble({ message, messageIndex, totalMessages, onFork, onInsertI
         ) : !message.content ? (
           <span className="text-zinc-500">(empty)</span>
         ) : isUser ? (
-          message.content
+          <span className="whitespace-pre-wrap">{message.content}</span>
         ) : (
           <div className="markdown-body">
             <Markdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeHighlight]}>
@@ -972,6 +973,7 @@ function setDraftCache(sessionId: string, text: string) {
   const cache = getDraftCache();
   if (text) { cache[sessionId] = text; } else { delete cache[sessionId]; }
   localStorage.setItem(DRAFT_CACHE_KEY, JSON.stringify(cache));
+  globalSessionStore.setInputDraft(sessionId, !!text.trim());
 }
 
 const MessageInput = observer(forwardRef<ChatInputHandle, MessageInputProps>(function MessageInput({ onSend, onCancel, sending, sessionId, projectPath, tab }, ref) {
@@ -1047,6 +1049,7 @@ const MessageInput = observer(forwardRef<ChatInputHandle, MessageInputProps>(fun
         onCancel={handleCancel}
         sending={sending}
         projectPath={projectPath}
+        lastMessageIsUser={tab.selectedDetail?.messages?.at(-1)?.type === 'user'}
         placeholder={sending ? 'draft your next message... (esc to cancel stream)' : 'send a message... (paste/drop images, enter to send)'}
       />
     </div>

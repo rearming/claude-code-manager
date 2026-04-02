@@ -68,11 +68,8 @@ router.post('/:id/resume', (req, res) => {
 router.post('/:id/send', async (req, res) => {
   try {
     const { message, dangerouslySkipPermissions, images, model, reasoningEffort } = req.body;
-    if (!message || typeof message !== 'string') {
-      res.status(400).json({ error: 'message is required' });
-      return;
-    }
-    await streamMessage(req.params.id, message, res, {
+    const msg = typeof message === 'string' ? message : '';
+    await streamMessage(req.params.id, msg, res, {
       dangerouslySkipPermissions: !!dangerouslySkipPermissions,
       model: model || undefined,
       reasoningEffort: reasoningEffort || undefined,

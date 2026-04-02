@@ -14,6 +14,7 @@ const OPEN_TABS_KEY = 'ccm-open-tabs';
 const CUSTOM_NAMES_KEY = 'ccm-custom-names';
 const TAB_WIDTHS_KEY = 'ccm-tab-widths';
 const COLLAPSED_PROJECTS_KEY = 'ccm-collapsed-projects';
+const CHAT_DRAFTS_KEY = 'ccm-chat-drafts';
 
 interface PanelLayout {
   sidebarSize: number;
@@ -125,6 +126,17 @@ function loadCollapsedProjects(): Set<string> {
   }
 }
 
+function loadInputDraftSessionIds(): Set<string> {
+  try {
+    const raw = localStorage.getItem(CHAT_DRAFTS_KEY);
+    if (!raw) return new Set();
+    const cache: Record<string, string> = JSON.parse(raw);
+    return new Set(Object.keys(cache).filter(k => cache[k]?.trim()));
+  } catch {
+    return new Set();
+  }
+}
+
 function loadOpenTabs(): { tabSessionIds: string[]; activeTabId: string | null; minimizedTabIds: string[] } {
   try {
     const raw = sessionStorage.getItem(OPEN_TABS_KEY);
@@ -166,6 +178,8 @@ export class SessionStore {
   customNames: Record<string, string> = loadCustomNames();
   tabWidths: Record<string, number> = loadTabWidths();
   collapsedProjects: Set<string> = loadCollapsedProjects();
+  inputDraftSessionIds: Set<string> = loadInputDraftSessionIds();
+  activeCollapsed = false;
 
   constructor() {
     makeAutoObservable(this);
@@ -595,6 +609,22 @@ export class SessionStore {
 
   isProjectCollapsed(project: string): boolean {
     return this.collapsedProjects.has(project);
+  }
+
+  // ── Active section ──────────────────────────────────────────
+
+  toggleActiveCollapsed() {
+    this.activeCollapsed = !this.activeCollapsed;
+  }
+
+  // ── Input drafts ───────────────────────────────────────────
+
+  setInputDraft(sessionId: string, hasText: boolean) {
+    if (hasText) {
+      this.inputDraftSessionIds.add(sessionId);
+    } else {
+      this.inputDraftSessionIds.delete(sessionId);
+    }
   }
 
   // ── Custom names ────────────────────────────────────────────
