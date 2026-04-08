@@ -44,6 +44,7 @@ export const SessionDetail = observer(({ store, tab }: Props) => {
   const { summary, messages } = detail;
   const containerRef = useRef<HTMLDivElement>(null);
   const wasNearBottomRef = useRef(true);
+  const isAutoScrollingRef = useRef(false);
   const isStale = useStaleStreamDetector(tab);
 
   const isNearBottom = useCallback(() => {
@@ -85,7 +86,9 @@ export const SessionDetail = observer(({ store, tab }: Props) => {
   const handleScroll = useCallback(() => {
     const el = containerRef.current;
     if (!el) return;
-    wasNearBottomRef.current = isNearBottom();
+    if (!isAutoScrollingRef.current) {
+      wasNearBottomRef.current = isNearBottom();
+    }
     store.saveScrollPosition(summary.sessionId, el.scrollTop, messages.length);
   }, [store, summary.sessionId, isNearBottom, messages.length]);
 
@@ -97,7 +100,20 @@ export const SessionDetail = observer(({ store, tab }: Props) => {
         if (!store.settings.autoScrollOnNewMessages && !store.settings.stickToBottom) return;
         const el = containerRef.current;
         if (el && (wasNearBottomRef.current || store.settings.stickToBottom)) {
+          // Guard against handleScroll falsely clearing wasNearBottom
+          // during the scroll+re-render cycle (e.g. when committed messages
+          // from subagents cause a large DOM height change after React renders)
+          isAutoScrollingRef.current = true;
           el.scrollTop = el.scrollHeight;
+          // Scroll again after React re-renders to catch height changes
+          // from committed messages / subagent output
+          requestAnimationFrame(() => {
+            el.scrollTop = el.scrollHeight;
+            // Release guard after the post-render scroll settles
+            requestAnimationFrame(() => {
+              isAutoScrollingRef.current = false;
+            });
+          });
         }
       }
     );
@@ -290,6 +306,12 @@ export const SessionDetail = observer(({ store, tab }: Props) => {
           {isStale && (
             <div className="px-3 py-2 mx-6 mt-2">
               <span className="text-xs text-zinc-500">taking a bit long — may be processing a large context or waiting for permission approval</span>
+            </div>
+          )}
+
+          {tab.error && !tab.sending && (
+            <div className="p-3 mx-6 mt-2 border border-red-900 bg-red-950/30">
+              <div className="text-xs text-red-400">{tab.error}</div>
             </div>
           )}
         </div>
@@ -974,6 +996,20 @@ const MessageInput = observer(forwardRef<ChatInputHandle, MessageInputProps>(fun
   if (prevSessionIdRef.current !== sessionId) {
     prevSessionIdRef.current = sessionId;
     setText(getDraftCache()[sessionId] || '');
+  }
+
+  // Restore failed message back into the input
+  const prevFailedRef = useRef<string | null>(null);
+  if (tab.failedMessage && tab.failedMessage !== prevFailedRef.current) {
+    prevFailedRef.current = tab.failedMessage;
+    const current = text.trim();
+    const restored = current ? `${tab.failedMessage}\n${current}` : tab.failedMessage;
+    setText(restored);
+    setDraftCache(sessionId, restored);
+    tab.failedMessage = null;
+    tab.failedImages = null;
+  } else if (!tab.failedMessage) {
+    prevFailedRef.current = null;
   }
 
   const handleChange = (val: string) => {

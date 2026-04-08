@@ -231,6 +231,9 @@ export class TabSession {
   forkResult: ForkResult | null = null;
   forking = false;
   error: string | null = null;
+  /** Message preserved from a failed send so the input can restore it */
+  failedMessage: string | null = null;
+  failedImages: ImageAttachment[] | null = null;
   reconnectedSessionId: string | null = null;
 
   // File change tracking
@@ -537,6 +540,8 @@ export class TabSession {
     this.pendingUserMessage = message || null;
     this.pendingImages = images || null;
     this.error = null;
+    this.failedMessage = null;
+    this.failedImages = null;
     this.clearRawLines();
     this.streamingToolCalls = [];
     this.streamingBlocks = [];
@@ -560,6 +565,8 @@ export class TabSession {
         runInAction(() => {
           this.error = error;
           this.sending = false;
+          this.failedMessage = this.pendingUserMessage;
+          this.failedImages = this.pendingImages;
           this.pendingUserMessage = null;
           this.pendingImages = null;
         });
@@ -587,6 +594,8 @@ export class TabSession {
     this.pendingImages = images || null;
     this._pendingCustomName = customName?.trim() || null;
     this.error = null;
+    this.failedMessage = null;
+    this.failedImages = null;
     this.selectedDetail = null;
     this.clearRawLines();
     this.streamingToolCalls = [];
@@ -623,6 +632,8 @@ export class TabSession {
         runInAction(() => {
           this.error = error;
           this.sending = false;
+          this.failedMessage = this.pendingUserMessage;
+          this.failedImages = this.pendingImages;
           this.pendingUserMessage = null;
           this.pendingImages = null;
         });

@@ -354,7 +354,10 @@ function pipeProcessToSSE(proc: SessionProcess, message: string, res: Response, 
     sendEvent({ type: 'raw', data });
   };
 
+  let gotResult = false;
+
   const onResult = (data: { result: string; durationMs: number; cost: number }) => {
+    gotResult = true;
     sendEvent({ type: 'result', ...data });
     sendEvent({ type: 'done' });
     cleanup();
@@ -363,10 +366,16 @@ function pipeProcessToSSE(proc: SessionProcess, message: string, res: Response, 
 
   const onError = (error: string) => {
     sendEvent({ type: 'error', error });
+    sendEvent({ type: 'done' });
+    cleanup();
+    if (!res.writableEnded) res.end();
   };
 
   const onClose = () => {
     // Process died mid-turn
+    if (!gotResult) {
+      sendEvent({ type: 'error', error: 'Claude process exited unexpectedly without a response' });
+    }
     sendEvent({ type: 'done' });
     cleanup();
     if (!res.writableEnded) res.end();
@@ -434,16 +443,26 @@ export function subscribeToSession(sessionId: string, res: Response): boolean {
   }
 
   // Pipe live events going forward
+  let gotResult = false;
   const onText = (text: string) => sendEvent({ type: 'text', text });
   const onRaw = (data: string) => sendEvent({ type: 'raw', data });
   const onResult = (data: { result: string; durationMs: number; cost: number }) => {
+    gotResult = true;
     sendEvent({ type: 'result', ...data });
     sendEvent({ type: 'done' });
     cleanup();
     res.end();
   };
-  const onError = (error: string) => sendEvent({ type: 'error', error });
+  const onError = (error: string) => {
+    sendEvent({ type: 'error', error });
+    sendEvent({ type: 'done' });
+    cleanup();
+    if (!res.writableEnded) res.end();
+  };
   const onClose = () => {
+    if (!gotResult) {
+      sendEvent({ type: 'error', error: 'Claude process exited unexpectedly without a response' });
+    }
     sendEvent({ type: 'done' });
     cleanup();
     if (!res.writableEnded) res.end();

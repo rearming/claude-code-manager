@@ -3,7 +3,7 @@ import { observer } from 'mobx-react-lite';
 import Markdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import rehypeHighlight from 'rehype-highlight';
-import { Plus, Terminal, Settings, ChevronDown, ChevronRight, Diff, ArrowDownToLine } from 'lucide-react';
+import { Plus, Terminal, Settings, ChevronDown, ChevronRight, Diff, ArrowDownToLine, Copy } from 'lucide-react';
 import { Button } from '@/components/shadcn/ui/button';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/shadcn/ui/tooltip';
 import { ResizablePanelGroup, ResizablePanel, ResizableHandle, usePanelRef } from '@/components/shadcn/ui/resizable';
@@ -25,7 +25,7 @@ interface Props {
 
 export const Layout = observer(({ store }: Props) => {
   const activeTab = store.activeTab;
-  const showNewSessionStreaming = activeTab && !activeTab.selectedDetail && !!(activeTab.sending || activeTab.streamingText);
+  const showNewSessionStreaming = activeTab && !activeTab.selectedDetail && !!(activeTab.sending || activeTab.streamingText || activeTab.error);
   const sidebarPanelRef = usePanelRef();
   const chatPanelRef = usePanelRef();
   const terminalPanelRef = usePanelRef();
@@ -281,7 +281,7 @@ const NewSessionStreamingView = observer(({ store, tab }: { store: SessionStore;
   <div className="flex flex-col h-full">
     <div className="px-5 py-4 border-b border-border">
       <h2 className="text-lg text-zinc-200">new session</h2>
-      <span className="text-sm text-zinc-500">starting...</span>
+      <span className="text-sm text-zinc-500">{tab.error ? 'failed' : 'starting...'}</span>
     </div>
     <div className="flex-1 overflow-y-auto p-4">
       {tab.pendingUserMessage && (
@@ -366,8 +366,29 @@ const NewSessionStreamingView = observer(({ store, tab }: { store: SessionStore;
         </div>
       )}
     </div>
-    <div className="p-3 border-t border-border">
-      <Button variant="destructive" onClick={() => tab.cancelSend()}>cancel</Button>
-    </div>
+    {tab.error && (
+      <div className="mx-4 mb-3 p-3 border border-red-900 bg-red-950/30">
+        <div className="text-xs text-red-400 mb-2">{tab.error}</div>
+        {tab.failedMessage && (
+          <div className="flex gap-2">
+            <Button variant="outline" size="sm" className="text-xs" onClick={() => {
+              navigator.clipboard.writeText(tab.failedMessage!);
+            }}>
+              <Copy className="h-3 w-3 mr-1" /> copy message
+            </Button>
+            <Button variant="outline" size="sm" className="text-xs" onClick={() => {
+              store.showNewSession = true;
+            }}>
+              retry in new session
+            </Button>
+          </div>
+        )}
+      </div>
+    )}
+    {tab.sending && (
+      <div className="p-3 border-t border-border">
+        <Button variant="destructive" onClick={() => tab.cancelSend()}>cancel</Button>
+      </div>
+    )}
   </div>
 ));
