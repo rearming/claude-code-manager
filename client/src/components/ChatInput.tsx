@@ -1,7 +1,9 @@
 import { useState, useRef, useCallback, useImperativeHandle, forwardRef, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { Send, Play, X, ImagePlus, AtSign } from 'lucide-react';
 import { Button } from '@/components/shadcn/ui/button';
 import { FileMentionDropdown } from './FileMentionDropdown';
+import AnnotationCanvas from './AnnotationCanvas';
 import type { ImageAttachment } from '../types';
 
 const ACCEPTED_IMAGE_TYPES = ['image/png', 'image/jpeg', 'image/gif', 'image/webp'];
@@ -59,6 +61,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
   projectPath,
 }, ref) {
   const [images, setImages] = useState<ImageAttachment[]>([]);
+  const [annotatingIndex, setAnnotatingIndex] = useState<number | null>(null);
   const [dragOver, setDragOver] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -342,7 +345,8 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
               <img
                 src={`data:${img.mediaType};base64,${img.data}`}
                 alt={`attachment ${i + 1}`}
-                className="h-16 w-16 object-cover border border-border"
+                className="h-16 w-16 object-cover border border-border cursor-pointer hover:border-zinc-400 transition-colors"
+                onClick={() => setAnnotatingIndex(i)}
               />
               <button
                 className="absolute -top-1.5 -right-1.5 h-4 w-4 bg-red-600 text-white flex items-center justify-center text-xs opacity-0 group-hover:opacity-100 transition-opacity"
@@ -353,6 +357,20 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
             </div>
           ))}
         </div>
+      )}
+      {annotatingIndex !== null && images[annotatingIndex] && createPortal(
+        <AnnotationCanvas
+          imageSrc={`data:${images[annotatingIndex].mediaType};base64,${images[annotatingIndex].data}`}
+          onSave={(annotatedDataUrl) => {
+            const base64 = annotatedDataUrl.split(',')[1];
+            setImages(prev => prev.map((img, i) =>
+              i === annotatingIndex ? { mediaType: 'image/png', data: base64 } : img
+            ));
+            setAnnotatingIndex(null);
+          }}
+          onClose={() => setAnnotatingIndex(null)}
+        />,
+        document.body,
       )}
       <textarea
         ref={textareaRef}

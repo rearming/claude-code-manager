@@ -1,8 +1,23 @@
 import { Router } from 'express';
-import { listSessions, getSessionDetail } from '../services/claude-data.js';
+import { listSessions, getSessionDetail, searchSessionContent } from '../services/claude-data.js';
 import { forkSession } from '../services/forker.js';
 
 const router = Router();
+
+router.get('/search-content', async (req, res) => {
+  try {
+    const { q } = req.query;
+    if (typeof q !== 'string' || !q.trim()) {
+      res.json([]);
+      return;
+    }
+    const sessionIds = await searchSessionContent(q.trim());
+    res.json(sessionIds);
+  } catch (err) {
+    console.error('Error searching session content:', err);
+    res.status(500).json({ error: 'Failed to search session content' });
+  }
+});
 
 router.get('/', async (_req, res) => {
   try {

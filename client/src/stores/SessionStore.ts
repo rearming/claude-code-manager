@@ -1,6 +1,6 @@
 import { makeAutoObservable, runInAction } from 'mobx';
 import type { SessionSummary, ImageAttachment } from '../types';
-import { fetchSessions } from '../api';
+import { fetchSessions, searchSessionContent } from '../api';
 import { TabSession } from './TabSession';
 
 // Re-export for components that import from here
@@ -168,6 +168,10 @@ export class SessionStore {
   showOpenTabsOnly = loadSettings().showOpenTabsOnly || false;
   showNewSession = false;
   pendingDraftId: string | null = null;
+  contentMatchIds: Set<string> = new Set();
+  contentSearchLoading = false;
+  private contentSearchTimer: ReturnType<typeof setTimeout> | null = null;
+  private contentSearchAbort: AbortController | null = null;
 
   // ── Tab management ────────────────────────────────────────
   tabs: TabSession[] = [];
@@ -516,7 +520,8 @@ export class SessionStore {
           s.firstMessage.toLowerCase().includes(q) ||
           (s.slug && s.slug.toLowerCase().includes(q)) ||
           s.sessionId.includes(q) ||
-          (this.customNames[s.sessionId] && this.customNames[s.sessionId].toLowerCase().includes(q))
+          (this.customNames[s.sessionId] && this.customNames[s.sessionId].toLowerCase().includes(q)) ||
+          this.contentMatchIds.has(s.sessionId)
       );
     }
 
@@ -558,6 +563,34 @@ export class SessionStore {
 
   setSearchQuery(query: string) {
     this.searchQuery = query;
+
+    // Debounce content search
+    if (this.contentSearchTimer) clearTimeout(this.contentSearchTimer);
+    if (this.contentSearchAbort) this.contentSearchAbort.abort();
+
+    if (!query.trim()) {
+      this.contentMatchIds = new Set();
+      this.contentSearchLoading = false;
+      return;
+    }
+
+    this.contentSearchLoading = true;
+    this.contentSearchTimer = setTimeout(() => {
+      const abort = new AbortController();
+      this.contentSearchAbort = abort;
+      searchSessionContent(query.trim()).then((ids) => {
+        if (abort.signal.aborted) return;
+        runInAction(() => {
+          this.contentMatchIds = new Set(ids);
+          this.contentSearchLoading = false;
+        });
+      }).catch(() => {
+        if (abort.signal.aborted) return;
+        runInAction(() => {
+          this.contentSearchLoading = false;
+        });
+      });
+    }, 300);
   }
 
   setProjectFilter(project: string) {

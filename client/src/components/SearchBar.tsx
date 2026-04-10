@@ -1,5 +1,5 @@
 import { observer } from 'mobx-react-lite';
-import { Archive, Search, PanelTop } from 'lucide-react';
+import { Archive, Search, PanelTop, Loader2 } from 'lucide-react';
 import { Input } from '@/components/shadcn/ui/input';
 import {
   Select,
@@ -19,7 +19,11 @@ export const SearchBar = observer(({ store }: Props) => {
   return (
     <div className="px-4 py-3 border-b border-border space-y-2">
       <div className="relative">
-        <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-zinc-500" />
+        {store.contentSearchLoading ? (
+          <Loader2 className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-zinc-500 animate-spin" />
+        ) : (
+          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-zinc-500" />
+        )}
         <Input
           type="text"
           placeholder="search sessions..."

@@ -49,6 +49,14 @@ export async function fetchSessions(params?: {
   return res.json();
 }
 
+export async function searchSessionContent(query: string): Promise<string[]> {
+  const url = new URL(`${BASE}/sessions/search-content`, window.location.origin);
+  url.searchParams.set('q', query);
+  const res = await fetch(url.toString());
+  if (!res.ok) return [];
+  return res.json();
+}
+
 export async function fetchSessionDetail(
   sessionId: string
 ): Promise<SessionDetail> {

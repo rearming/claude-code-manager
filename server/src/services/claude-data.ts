@@ -617,6 +617,87 @@ export async function findSessionProject(sessionId: string): Promise<string | nu
   return null;
 }
 
+/**
+ * Search through message content of all sessions for a query string.
+ * Returns session IDs that have matching user or assistant message text.
+ */
+export async function searchSessionContent(query: string): Promise<string[]> {
+  const claudeHome = getClaudeHome();
+  const projectsDir = path.join(claudeHome, 'projects');
+  const q = query.toLowerCase();
+  const matchingIds: string[] = [];
+
+  let projectDirs: string[];
+  try {
+    projectDirs = (await fs.promises.readdir(projectsDir, { withFileTypes: true }))
+      .filter((e) => e.isDirectory())
+      .map((e) => e.name);
+  } catch {
+    return [];
+  }
+
+  const searchPromises: Promise<void>[] = [];
+
+  for (const projDir of projectDirs) {
+    const projPath = path.join(projectsDir, projDir);
+    searchPromises.push(
+      (async () => {
+        let files: string[];
+        try {
+          files = await fs.promises.readdir(projPath);
+        } catch {
+          return;
+        }
+
+        for (const file of files) {
+          if (!file.endsWith('.jsonl') || file.startsWith('agent-')) continue;
+          const sessionId = file.replace('.jsonl', '');
+          const filePath = path.join(projPath, file);
+
+          try {
+            const stream = fs.createReadStream(filePath, { encoding: 'utf8' });
+            const rl = readline.createInterface({ input: stream, crlfDelay: Infinity });
+            let found = false;
+
+            for await (const line of rl) {
+              if (found || !line.trim()) continue;
+              try {
+                const entry = JSON.parse(line);
+                if (entry.type !== 'user' && entry.type !== 'assistant') continue;
+
+                const content = entry.message?.content;
+                let text = '';
+                if (typeof content === 'string') {
+                  text = content;
+                } else if (Array.isArray(content)) {
+                  text = content
+                    .filter((c: Record<string, unknown>) => c.type === 'text')
+                    .map((c: Record<string, unknown>) => c.text as string)
+                    .join(' ');
+                }
+
+                if (text.toLowerCase().includes(q)) {
+                  found = true;
+                  matchingIds.push(sessionId);
+                  rl.close();
+                  stream.destroy();
+                }
+              } catch {
+                // Skip malformed lines
+              }
+            }
+          } catch {
+            // File read error
+          }
+        }
+      })()
+    );
+  }
+
+  await Promise.all(searchPromises);
+  return matchingIds;
+}
+
 async function getHistoryEntry(sessionId: string): Promise<{ firstMessage: string } | null> {
   const historyPath = path.join(getClaudeHome(), 'history.jsonl');
   try {
