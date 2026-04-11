@@ -779,6 +779,7 @@ function getToolSummary(tool: ToolCallSummary): string {
 
 function ToolCallView({ tool, forceExpand }: { tool: ToolCallSummary; forceExpand?: boolean }) {
   const [localExpand, setLocalExpand] = useState<boolean | null>(null);
+  const [showOutput, setShowOutput] = useState(false);
   const prevForceRef = useRef(forceExpand);
   if (prevForceRef.current !== forceExpand) {
     prevForceRef.current = forceExpand;
@@ -799,6 +800,22 @@ function ToolCallView({ tool, forceExpand }: { tool: ToolCallSummary; forceExpan
       {expanded && (
         <div className="px-3 py-2 border-t border-zinc-800">
           <ToolCallFormatted input={tool.input} toolName={tool.name} />
+        </div>
+      )}
+      {expanded && tool.output && (
+        <div className="border-t border-zinc-800">
+          <button
+            className="flex items-center gap-1 px-3 py-1 text-xs text-zinc-500 hover:text-zinc-300 transition-colors w-full"
+            onClick={(e) => { e.stopPropagation(); setShowOutput(!showOutput); }}
+          >
+            {showOutput ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
+            output
+          </button>
+          {showOutput && (
+            <div className="px-3 py-2 border-t border-zinc-800">
+              <pre className="text-xs text-zinc-400 whitespace-pre-wrap break-words font-[--font-mono] max-h-96 overflow-y-auto">{tool.output}</pre>
+            </div>
+          )}
         </div>
       )}
     </div>

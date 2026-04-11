@@ -35,8 +35,10 @@ export interface ConversationMessage {
 }
 
 export interface ToolCallSummary {
+  id?: string;
   name: string;
   input: Record<string, any>;
+  output?: string;
 }
 
 export interface SessionDetail {

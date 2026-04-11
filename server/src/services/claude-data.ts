@@ -345,8 +345,27 @@ export async function getSessionDetail(sessionId: string): Promise<SessionDetail
         if (entry.type === 'user') {
           const content = entry.message?.content;
 
-          // Skip tool results
-          if (Array.isArray(content) && content[0]?.tool_use_id) continue;
+          // Attach tool results to the preceding assistant message's tool calls
+          if (Array.isArray(content) && content[0]?.tool_use_id) {
+            const lastMsg = messages[messages.length - 1];
+            if (lastMsg?.type === 'assistant' && lastMsg.toolCalls) {
+              for (const block of content) {
+                if (block.type !== 'tool_result' || !block.tool_use_id) continue;
+                const tc = lastMsg.toolCalls.find(t => t.id === block.tool_use_id);
+                if (!tc) continue;
+                const resultContent = block.content;
+                if (typeof resultContent === 'string') {
+                  tc.output = resultContent;
+                } else if (Array.isArray(resultContent)) {
+                  tc.output = resultContent
+                    .filter((c: Record<string, unknown>) => c.type === 'text')
+                    .map((c: Record<string, unknown>) => c.text)
+                    .join('\n');
+                }
+              }
+            }
+            continue;
+          }
 
           const text = typeof content === 'string'
             ? content
@@ -401,6 +420,7 @@ export async function getSessionDetail(sessionId: string): Promise<SessionDetail
               textParts.push(block.text);
             } else if (block.type === 'tool_use') {
               toolCalls.push({
+                id: block.id,
                 name: block.name,
                 input: typeof block.input === 'string'
                   ? { raw: block.input }
