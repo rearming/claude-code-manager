@@ -121,7 +121,7 @@ export const SettingsPanel = observer(({ store }: Props) => {
                   className="bg-black/50 h-8 text-xs"
                 />
                 <p className="text-[10px] text-zinc-600 mt-1">
-                  e.g. claude-sonnet-4-5-20250514, claude-opus-4-0-20250514
+                  e.g. claude-opus-4-7-20250417, claude-sonnet-4-6-20250417
                 </p>
               </div>
 

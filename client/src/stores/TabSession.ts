@@ -1,6 +1,6 @@
 import { makeAutoObservable, runInAction } from 'mobx';
 import type { SessionDetail, ForkResult, ImageAttachment, ConversationMessage, ToolCallSummary } from '../types';
-import { fetchSessionDetail, resumeSession, forkSessionAt, streamMessageToSession, streamNewSession, fetchSessionStatus, subscribeToSession } from '../api';
+import { fetchSessionDetail, resumeSession, forkSessionAt, streamMessageToSession, streamNewSession, fetchSessionStatus, subscribeToSession, killSessionProcess } from '../api';
 import type { ModelConfig } from './SessionStore';
 
 // ── File change tracking ──────────────────────────────────
@@ -661,6 +661,7 @@ export class TabSession {
   cancelSend(): string | null {
     if (this.abortStream) {
       const message = this.pendingUserMessage;
+      const sid = this.sessionId;
       this.abortStream();
       this.abortStream = null;
       this.sending = false;
@@ -670,10 +671,12 @@ export class TabSession {
       this.streamingToolCalls = [];
       this.streamingBlocks = [];
       this.committedStreamingMessages = [];
-      // Reload to show actual conversation state after abort
-      const sid = this.sessionId;
+      // Kill the server-side Claude process — aborting the SSE alone
+      // lets Claude keep running tools in the background which undermines the cancel.
       if (sid) {
-        this.reloadSession(sid, true);
+        killSessionProcess(sid).finally(() => {
+          runInAction(() => { this.reloadSession(sid, true); });
+        });
       }
       return message;
     }

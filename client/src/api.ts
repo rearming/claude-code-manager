@@ -156,6 +156,24 @@ export async function fetchSessionStatus(
 }
 
 /**
+ * Kill the persistent Claude process for a session.
+ * Used on explicit cancel — unlike a plain SSE disconnect, this actually
+ * stops Claude from continuing to run tools in the background.
+ */
+export async function killSessionProcess(sessionId: string): Promise<boolean> {
+  try {
+    const res = await fetch(`${BASE}/sessions/${sessionId}/process`, {
+      method: 'DELETE',
+    });
+    if (!res.ok) return false;
+    const data = await res.json().catch(() => ({ killed: false }));
+    return !!data.killed;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Subscribe to an already-streaming session's events (reconnect after reload).
  * Returns an abort function, or null if the session isn't streaming (204).
  */

@@ -54,7 +54,7 @@ const defaultPanelLayout: PanelLayout = {
 };
 
 const defaultModelConfig: ModelConfig = {
-  model: '',
+  model: 'claude-opus-4-7-20250417',
   reasoningEffort: '',
 };
 
@@ -139,8 +139,11 @@ function loadInputDraftSessionIds(): Set<string> {
 
 function loadOpenTabs(): { tabSessionIds: string[]; activeTabId: string | null; minimizedTabIds: string[] } {
   try {
-    const raw = sessionStorage.getItem(OPEN_TABS_KEY);
+    // Try localStorage first (new), fall back to sessionStorage (legacy)
+    const raw = localStorage.getItem(OPEN_TABS_KEY) || sessionStorage.getItem(OPEN_TABS_KEY);
     if (raw) {
+      // Migrate: clear legacy sessionStorage entry
+      sessionStorage.removeItem(OPEN_TABS_KEY);
       const parsed = JSON.parse(raw);
       return {
         tabSessionIds: parsed.tabSessionIds || [],
@@ -770,7 +773,7 @@ export class SessionStore {
       activeTabId: this.activeTab?.sessionId || null,
       minimizedTabIds: this.minimizedTabs.map(t => t.sessionId).filter(Boolean),
     };
-    sessionStorage.setItem(OPEN_TABS_KEY, JSON.stringify(data));
+    localStorage.setItem(OPEN_TABS_KEY, JSON.stringify(data));
   }
 }
 
