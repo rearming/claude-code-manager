@@ -31,29 +31,33 @@ export const SessionList = observer(({ store }: Props) => {
   const grouped = store.groupedSessions;
   const streamingSids = store.streamingSessionIds;
   const draftSids = store.inputDraftSessionIds;
+  const unreadSids = store.unreadSessionIds;
   const activeSessionId = store.activeTab?.sessionId;
 
   const getStatus = (sessionId: string): SessionStatus => {
     if (streamingSids.has(sessionId)) return 'streaming';
+    if (unreadSids.has(sessionId)) return 'unread';
     return null;
   };
 
-  // Active = only the individual sessions that are streaming or have draft input
+  // Active = sessions that are unread, streaming, or have draft input
   const activeSessionIds = new Set<string>();
   const activeSessions: SessionSummary[] = [];
   for (const [, sessions] of grouped) {
     for (const s of sessions) {
-      if (streamingSids.has(s.sessionId) || draftSids.has(s.sessionId)) {
+      if (unreadSids.has(s.sessionId) || streamingSids.has(s.sessionId) || draftSids.has(s.sessionId)) {
         activeSessions.push(s);
         activeSessionIds.add(s.sessionId);
       }
     }
   }
-  // Sort: streaming first, then draft, then recency
+  // Sort: unread (needs your input) first, then streaming, then draft, then recency
   activeSessions.sort((a, b) => {
-    const aStream = streamingSids.has(a.sessionId) ? 2 : draftSids.has(a.sessionId) ? 1 : 0;
-    const bStream = streamingSids.has(b.sessionId) ? 2 : draftSids.has(b.sessionId) ? 1 : 0;
-    if (aStream !== bStream) return bStream - aStream;
+    const rank = (sid: string) =>
+      unreadSids.has(sid) ? 3 : streamingSids.has(sid) ? 2 : draftSids.has(sid) ? 1 : 0;
+    const aRank = rank(a.sessionId);
+    const bRank = rank(b.sessionId);
+    if (aRank !== bRank) return bRank - aRank;
     return b.lastTimestamp - a.lastTimestamp;
   });
 
@@ -64,6 +68,7 @@ export const SessionList = observer(({ store }: Props) => {
     if (remaining.length > 0) restEntries.push([project, remaining]);
   }
   const hasActive = activeSessions.length > 0;
+  const unreadCount = activeSessions.filter((s) => unreadSids.has(s.sessionId)).length;
 
   return (
     <div className="flex-1 overflow-y-auto">
@@ -79,6 +84,12 @@ export const SessionList = observer(({ store }: Props) => {
               <ChevronDown className="w-3 h-3 shrink-0" />
             )}
             active
+            {unreadCount > 0 && (
+              <span className="flex items-center gap-1 text-amber-400 normal-case tracking-normal font-medium">
+                <span className="h-1.5 w-1.5 rounded-full bg-amber-400" />
+                {unreadCount} ready
+              </span>
+            )}
             {store.activeCollapsed && (
               <span className="ml-auto text-[10px] font-normal text-zinc-600">
                 {activeSessions.length}

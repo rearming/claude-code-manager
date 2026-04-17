@@ -15,6 +15,7 @@ const CUSTOM_NAMES_KEY = 'ccm-custom-names';
 const TAB_WIDTHS_KEY = 'ccm-tab-widths';
 const COLLAPSED_PROJECTS_KEY = 'ccm-collapsed-projects';
 const CHAT_DRAFTS_KEY = 'ccm-chat-drafts';
+const UNREAD_SESSIONS_KEY = 'ccm-unread-sessions';
 
 interface PanelLayout {
   sidebarSize: number;
@@ -126,6 +127,15 @@ function loadCollapsedProjects(): Set<string> {
   }
 }
 
+function loadUnreadSessions(): Set<string> {
+  try {
+    const raw = localStorage.getItem(UNREAD_SESSIONS_KEY);
+    return raw ? new Set(JSON.parse(raw)) : new Set();
+  } catch {
+    return new Set();
+  }
+}
+
 function loadInputDraftSessionIds(): Set<string> {
   try {
     const raw = localStorage.getItem(CHAT_DRAFTS_KEY);
@@ -186,6 +196,7 @@ export class SessionStore {
   tabWidths: Record<string, number> = loadTabWidths();
   collapsedProjects: Set<string> = loadCollapsedProjects();
   inputDraftSessionIds: Set<string> = loadInputDraftSessionIds();
+  unreadSessionIds: Set<string> = loadUnreadSessions();
   activeCollapsed = false;
 
   constructor() {
@@ -241,7 +252,12 @@ export class SessionStore {
       () => this.settings.dangerouslySkipPermissions,
       (sid: string) => this.customNames[sid],
       (sid: string, name: string) => this.renameSession(sid, name),
-      (title: string, cost?: number) => this.showStreamEndNotification(title, cost),
+      (sid: string | null, title: string, cost?: number) => {
+        this.showStreamEndNotification(title, cost);
+        if (sid && sid !== this.activeTab?.sessionId) {
+          this.markSessionUnread(sid);
+        }
+      },
       () => this.modelConfig,
     );
   }
@@ -273,6 +289,7 @@ export class SessionStore {
     this.tabs.push(tab);
     this.activeTabId = tab.tabId;
     this.minimizedTabIds.delete(tab.tabId);
+    this.markSessionRead(sessionId);
     this.persistTabs();
     tab.loadDetail(sessionId);
     return tab;
@@ -291,6 +308,8 @@ export class SessionStore {
   activateTab(tabId: string) {
     this.activeTabId = tabId;
     this.minimizedTabIds.delete(tabId);
+    const tab = this.tabs.find(t => t.tabId === tabId);
+    if (tab?.sessionId) this.markSessionRead(tab.sessionId);
     this.persistTabs();
   }
 
@@ -655,6 +674,27 @@ export class SessionStore {
 
   // ── Input drafts ───────────────────────────────────────────
 
+  // ── Unread tracking ────────────────────────────────────────
+
+  markSessionUnread(sessionId: string) {
+    if (!sessionId) return;
+    if (!this.unreadSessionIds.has(sessionId)) {
+      this.unreadSessionIds.add(sessionId);
+      this.persistUnreadSessions();
+    }
+  }
+
+  markSessionRead(sessionId: string) {
+    if (!sessionId) return;
+    if (this.unreadSessionIds.delete(sessionId)) {
+      this.persistUnreadSessions();
+    }
+  }
+
+  isUnread(sessionId: string): boolean {
+    return this.unreadSessionIds.has(sessionId);
+  }
+
   setInputDraft(sessionId: string, hasText: boolean) {
     if (hasText) {
       this.inputDraftSessionIds.add(sessionId);
@@ -765,6 +805,10 @@ export class SessionStore {
 
   private persistCollapsedProjects() {
     localStorage.setItem(COLLAPSED_PROJECTS_KEY, JSON.stringify([...this.collapsedProjects]));
+  }
+
+  private persistUnreadSessions() {
+    localStorage.setItem(UNREAD_SESSIONS_KEY, JSON.stringify([...this.unreadSessionIds]));
   }
 
   private persistTabs() {

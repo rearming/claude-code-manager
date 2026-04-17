@@ -2,7 +2,7 @@ import { useState, useRef, useEffect, useCallback } from 'react';
 import { Archive, ArchiveRestore, GitBranch, GitFork } from 'lucide-react';
 import type { SessionSummary } from '../types';
 
-export type SessionStatus = 'streaming' | 'idle' | null;
+export type SessionStatus = 'streaming' | 'unread' | 'idle' | null;
 
 interface Props {
   session: SessionSummary;
@@ -66,13 +66,17 @@ export function SessionCard({ session, isSelected, status, isArchived, customNam
 
   const borderColor = status === 'streaming'
     ? 'border-l-green-500'
-    : isSelected
-      ? 'border-l-zinc-400'
-      : '';
+    : status === 'unread'
+      ? 'border-l-amber-400'
+      : isSelected
+        ? 'border-l-zinc-400'
+        : '';
+
+  const unreadTint = status === 'unread' && !isSelected ? 'bg-amber-400/[0.04]' : '';
 
   return (
     <div
-      className={`group px-4 py-3 border-b border-border cursor-pointer transition-colors hover:bg-zinc-900 ${
+      className={`group px-4 py-3 border-b border-border cursor-pointer transition-colors hover:bg-zinc-900 ${unreadTint} ${
         isSelected ? 'bg-zinc-800 border-l-2 ' + borderColor : status ? 'border-l-2 ' + borderColor : ''
       }`}
       onClick={onClick}
@@ -93,12 +97,18 @@ export function SessionCard({ session, isSelected, status, isArchived, customNam
           />
         ) : (
           <div
-            className="text-sm font-medium text-zinc-200 truncate flex-1"
+            className={`text-sm truncate flex-1 ${status === 'unread' ? 'font-semibold text-zinc-50' : 'font-medium text-zinc-200'}`}
             onDoubleClick={(e) => {
               e.stopPropagation();
               if (onRename) startRename();
             }}
           >
+            {status === 'unread' && (
+              <span
+                className="inline-block h-1.5 w-1.5 rounded-full bg-amber-400 mr-2 align-middle"
+                aria-hidden
+              />
+            )}
             {title || 'untitled session'}
           </div>
         )}
@@ -115,6 +125,11 @@ export function SessionCard({ session, isSelected, status, isArchived, customNam
           <span className="shrink-0 flex items-center gap-1 text-[10px] text-green-400 font-medium">
             <span className="h-1.5 w-1.5 rounded-full bg-green-500 animate-pulse" />
             live
+          </span>
+        )}
+        {status === 'unread' && (
+          <span className="shrink-0 text-[10px] text-amber-400 font-medium uppercase tracking-wider">
+            ready
           </span>
         )}
       </div>

@@ -244,7 +244,7 @@ export class TabSession {
   private _getDangerouslySkipPermissions: () => boolean;
   private _getCustomName: (sessionId: string) => string | undefined;
   private _setCustomName: (sessionId: string, name: string) => void;
-  private _onStreamEnd: (title: string, cost?: number) => void;
+  private _onStreamEnd: (sessionId: string | null, title: string, cost?: number) => void;
   private _getGlobalModelConfig: () => ModelConfig;
   private _reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private _rawLinesPersistTimer: ReturnType<typeof setTimeout> | null = null;
@@ -257,7 +257,7 @@ export class TabSession {
     getDangerouslySkipPermissions: () => boolean,
     getCustomName: (sessionId: string) => string | undefined,
     setCustomName: (sessionId: string, name: string) => void,
-    onStreamEnd: (title: string, cost?: number) => void,
+    onStreamEnd: (sessionId: string | null, title: string, cost?: number) => void,
     getGlobalModelConfig: () => ModelConfig,
   ) {
     this.tabId = `tab-${nextTabId++}`;
@@ -578,7 +578,7 @@ export class TabSession {
           this.pendingImages = null;
           this.abortStream = null;
           this.scrollToBottomOnLoad = true;
-          this._onStreamEnd(this.title, this._lastResultCost);
+          this._onStreamEnd(sessionId, this.title, this._lastResultCost);
           this.reloadSession(sessionId, true);
         });
       },
@@ -646,7 +646,7 @@ export class TabSession {
           this.abortStream = null;
           const sid = this.sessionId;
           this._onSessionsChanged();
-          this._onStreamEnd(this.title, this._lastResultCost);
+          this._onStreamEnd(sid, this.title, this._lastResultCost);
           if (sid) {
             this.scrollToBottomOnLoad = true;
             this.reloadSession(sid, true);
@@ -721,7 +721,7 @@ export class TabSession {
             this.sending = false;
             this.abortStream = null;
             this.scrollToBottomOnLoad = true;
-            this._onStreamEnd(this.title, this._lastResultCost);
+            this._onStreamEnd(sessionId, this.title, this._lastResultCost);
             this.reloadSession(sessionId, true);
           });
         },
