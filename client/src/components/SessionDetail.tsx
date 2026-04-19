@@ -149,7 +149,8 @@ export const SessionDetail = observer(({ store, tab }: Props) => {
   const handleFork = async (messageUuid: string) => {
     const newSessionId = await tab.forkFromMessage(summary.sessionId, messageUuid);
     if (newSessionId) {
-      store.selectSession(newSessionId);
+      const newTab = store.openTab(newSessionId);
+      newTab.scrollToBottomOnLoad = true;
     }
   };
 
