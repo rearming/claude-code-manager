@@ -1,5 +1,5 @@
 import { makeAutoObservable, runInAction } from 'mobx';
-import type { SessionDetail, ForkResult, ImageAttachment, ConversationMessage, ToolCallSummary } from '../types';
+import type { SessionDetail, ImageAttachment, ConversationMessage, ToolCallSummary } from '../types';
 import { fetchSessionDetail, resumeSession, forkSessionAt, streamMessageToSession, streamNewSession, fetchSessionStatus, subscribeToSession, killSessionProcess } from '../api';
 import type { ModelConfig } from './SessionStore';
 
@@ -228,7 +228,6 @@ export class TabSession {
 
   // Per-tab action state
   resumeCommand: string | null = null;
-  forkResult: ForkResult | null = null;
   forking = false;
   error: string | null = null;
   /** Message preserved from a failed send so the input can restore it */
@@ -244,6 +243,7 @@ export class TabSession {
   private _getDangerouslySkipPermissions: () => boolean;
   private _getCustomName: (sessionId: string) => string | undefined;
   private _setCustomName: (sessionId: string, name: string) => void;
+  private _applyForkName: (newSessionId: string, sourceTitle: string) => void;
   private _onStreamEnd: (sessionId: string | null, title: string, cost?: number) => void;
   private _getGlobalModelConfig: () => ModelConfig;
   private _reconnectTimer: ReturnType<typeof setTimeout> | null = null;
@@ -257,6 +257,7 @@ export class TabSession {
     getDangerouslySkipPermissions: () => boolean,
     getCustomName: (sessionId: string) => string | undefined,
     setCustomName: (sessionId: string, name: string) => void,
+    applyForkName: (newSessionId: string, sourceTitle: string) => void,
     onStreamEnd: (sessionId: string | null, title: string, cost?: number) => void,
     getGlobalModelConfig: () => ModelConfig,
   ) {
@@ -266,13 +267,15 @@ export class TabSession {
     this._getDangerouslySkipPermissions = getDangerouslySkipPermissions;
     this._getCustomName = getCustomName;
     this._setCustomName = setCustomName;
+    this._applyForkName = applyForkName;
     this._onStreamEnd = onStreamEnd;
     this._getGlobalModelConfig = getGlobalModelConfig;
-    makeAutoObservable<TabSession, '_onSessionsChanged' | '_getDangerouslySkipPermissions' | '_getCustomName' | '_setCustomName' | '_onStreamEnd' | '_getGlobalModelConfig' | '_reconnectTimer' | '_rawLinesPersistTimer' | '_pendingCustomName' | '_lastResultCost'>(this, {
+    makeAutoObservable<TabSession, '_onSessionsChanged' | '_getDangerouslySkipPermissions' | '_getCustomName' | '_setCustomName' | '_applyForkName' | '_onStreamEnd' | '_getGlobalModelConfig' | '_reconnectTimer' | '_rawLinesPersistTimer' | '_pendingCustomName' | '_lastResultCost'>(this, {
       _onSessionsChanged: false,
       _getDangerouslySkipPermissions: false,
       _getCustomName: false,
       _setCustomName: false,
+      _applyForkName: false,
       _onStreamEnd: false,
       _getGlobalModelConfig: false,
       _reconnectTimer: false,
@@ -516,21 +519,32 @@ export class TabSession {
     }
   }
 
-  async forkFromMessage(sessionId: string, messageUuid: string) {
+  async forkFromMessage(sessionId: string, messageUuid: string): Promise<string | null> {
     this.forking = true;
-    this.forkResult = null;
     try {
       const result = await forkSessionAt(sessionId, messageUuid);
+      // Derive source title for fork naming. Prefer the user's custom name,
+      // otherwise fall back to the slug / first message used as display title.
+      const custom = this._getCustomName(sessionId);
+      const summary = this.selectedDetail?.summary;
+      const sourceTitle = custom
+        || summary?.slug?.replaceAll('-', ' ')
+        || summary?.firstMessage?.slice(0, 40)
+        || '';
       runInAction(() => {
-        this.forkResult = result;
         this.forking = false;
+        if (sourceTitle) {
+          this._applyForkName(result.sessionId, sourceTitle);
+        }
         this._onSessionsChanged();
       });
+      return result.sessionId;
     } catch (e) {
       runInAction(() => {
         this.error = e instanceof Error ? e.message : 'Fork failed';
         this.forking = false;
       });
+      return null;
     }
   }
 
@@ -731,10 +745,6 @@ export class TabSession {
     } catch {
       // Status check failed — skip reconnect
     }
-  }
-
-  clearForkResult() {
-    this.forkResult = null;
   }
 
   requestScrollToBottom() {

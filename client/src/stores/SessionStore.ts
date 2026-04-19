@@ -252,6 +252,7 @@ export class SessionStore {
       () => this.settings.dangerouslySkipPermissions,
       (sid: string) => this.customNames[sid],
       (sid: string, name: string) => this.renameSession(sid, name),
+      (newSid: string, sourceTitle: string) => this.applyForkName(newSid, sourceTitle),
       (sid: string | null, title: string, cost?: number) => {
         this.showStreamEndNotification(title, cost);
         if (sid && sid !== this.activeTab?.sessionId) {
@@ -717,6 +718,20 @@ export class SessionStore {
 
   getCustomName(sessionId: string): string | undefined {
     return this.customNames[sessionId];
+  }
+
+  /**
+   * Assign a custom name to a forked session based on the source session's
+   * display title, appending `_forkN` (incrementing until unused).
+   */
+  applyForkName(newSessionId: string, sourceTitle: string) {
+    const trimmed = sourceTitle.trim();
+    if (!trimmed) return;
+    const base = trimmed.replace(/_fork\d+$/, '');
+    const used = new Set(Object.values(this.customNames));
+    let n = 0;
+    while (used.has(`${base}_fork${n}`)) n++;
+    this.renameSession(newSessionId, `${base}_fork${n}`);
   }
 
   // ── Tab widths ─────────────────────────────────────────────

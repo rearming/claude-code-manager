@@ -147,7 +147,10 @@ export const SessionDetail = observer(({ store, tab }: Props) => {
   };
 
   const handleFork = async (messageUuid: string) => {
-    await tab.forkFromMessage(summary.sessionId, messageUuid);
+    const newSessionId = await tab.forkFromMessage(summary.sessionId, messageUuid);
+    if (newSessionId) {
+      store.selectSession(newSessionId);
+    }
   };
 
   return (
@@ -186,31 +189,6 @@ export const SessionDetail = observer(({ store, tab }: Props) => {
           )}
         </div>
       </div>
-
-      {/* fork banner */}
-      {tab.forkResult && (
-        <div className="px-5 py-3 bg-zinc-900 border-b border-border flex items-center gap-3">
-          <GitFork className="h-4 w-4 text-zinc-400 shrink-0" />
-          <div className="flex-1 text-sm">
-            <strong className="text-zinc-200">fork created!</strong>{' '}
-            <span className="text-zinc-400">new session with {tab.forkResult.messagesCopied} messages copied.</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <div className="flex items-center gap-1 border border-border px-2 py-1">
-              <code className="text-xs text-zinc-400 font-[--font-mono]">{tab.forkResult.resumeCommand}</code>
-              <button className="text-zinc-500 hover:text-zinc-200" onClick={() => handleCopy(tab.forkResult!.resumeCommand)}>
-                <Copy className="h-3 w-3" />
-              </button>
-            </div>
-            <Button size="sm" variant="outline" onClick={() => {
-              const sid = tab.forkResult!.sessionId;
-              tab.clearForkResult();
-              store.selectSession(sid);
-            }}>open fork</Button>
-            <Button size="sm" variant="ghost" onClick={() => tab.clearForkResult()}>dismiss</Button>
-          </div>
-        </div>
-      )}
 
       {/* reconnection banner */}
       {tab.reconnectedSessionId === summary.sessionId && (
@@ -449,7 +427,6 @@ interface MessageBubbleProps {
 function MessageBubble({ message, messageIndex, totalMessages, onFork, onInsertImage, forking, globalExpand, globalDiffs }: MessageBubbleProps) {
   const [localExpand, setLocalExpand] = useState<boolean | null>(null);
   const [localDiffs, setLocalDiffs] = useState<boolean | null>(null);
-  const [confirmFork, setConfirmFork] = useState(false);
   const [previewImage, setPreviewImage] = useState<{ src: string; mediaType: string; data: string } | null>(null);
   const [annotating, setAnnotating] = useState(false);
   const [annotatedSrc, setAnnotatedSrc] = useState<string | null>(null);
@@ -461,12 +438,7 @@ function MessageBubble({ message, messageIndex, totalMessages, onFork, onInsertI
   const showDiffs = localDiffs !== null ? localDiffs : globalDiffs;
 
   const handleForkClick = () => {
-    if (confirmFork) {
-      onFork(message.uuid);
-      setConfirmFork(false);
-    } else {
-      setConfirmFork(true);
-    }
+    onFork(message.uuid);
   };
 
   const toggleTools = () => {
@@ -502,16 +474,11 @@ function MessageBubble({ message, messageIndex, totalMessages, onFork, onInsertI
         {message.model && <span className="text-xs text-zinc-600 border border-zinc-700 px-1">{message.model}</span>}
         <span className="text-xs text-zinc-600">#{messageIndex + 1}/{totalMessages}</span>
         <button
-          className={`ml-auto text-xs px-2 py-0.5 border transition-colors ${
-            confirmFork
-              ? 'border-red-800 text-red-400 bg-red-900/20 hover:bg-red-900/40'
-              : 'border-border text-zinc-500 hover:text-zinc-300 hover:border-zinc-500'
-          }`}
+          className="ml-auto text-xs px-2 py-0.5 border transition-colors border-border text-zinc-500 hover:text-zinc-300 hover:border-zinc-500"
           onClick={handleForkClick}
-          onBlur={() => setConfirmFork(false)}
           disabled={forking}
         >
-          {forking ? 'forking...' : confirmFork ? 'click to confirm fork' : 'fork from here'}
+          {forking ? 'forking...' : 'fork from here'}
         </button>
       </div>
 
