@@ -318,6 +318,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
         onSelect={insertMention}
         onClose={closeMention}
         onFilesChange={setMentionFiles}
+        anchorRef={containerRef}
       />
       <div
         ref={dragHandleRef}

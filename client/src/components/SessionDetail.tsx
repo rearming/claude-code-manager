@@ -163,7 +163,17 @@ export const SessionDetail = observer(({ store, tab }: Props) => {
             {store.getCustomName(summary.sessionId) || summary.slug?.replaceAll('-', ' ') || summary.firstMessage.slice(0, 60)}
           </h2>
           <div className="flex items-center gap-2 mt-0.5 text-xs text-zinc-500 flex-wrap">
-            <span>{summary.project}</span>
+            <span
+              className="cursor-pointer hover:text-zinc-300 transition-colors"
+              onClick={() => {
+                fetch('/api/browse/open', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ path: summary.project }),
+                });
+              }}
+              title="open in file explorer"
+            >{summary.project}</span>
             {summary.gitBranch && <span className="text-zinc-400 border border-border px-1.5 py-0.5">{summary.gitBranch}</span>}
             {summary.version && <span>v{summary.version}</span>}
             <span>{summary.messageCount} messages</span>
@@ -479,7 +489,7 @@ function MessageBubble({ message, messageIndex, totalMessages, onFork, onInsertI
           onClick={handleForkClick}
           disabled={forking}
         >
-          {forking ? 'forking...' : 'fork from here'}
+          {forking ? 'forking...' : 'fork'}
         </button>
       </div>
 

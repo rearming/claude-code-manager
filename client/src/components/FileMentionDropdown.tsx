@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import { File, Folder } from 'lucide-react';
 import { searchProjectFiles } from '../api';
 
@@ -10,6 +11,7 @@ interface FileMentionDropdownProps {
   onSelect: (filePath: string) => void;
   onClose: () => void;
   onFilesChange: (files: string[]) => void;
+  anchorRef: React.RefObject<HTMLElement | null>;
 }
 
 export function FileMentionDropdown({
@@ -20,11 +22,13 @@ export function FileMentionDropdown({
   onSelect,
   onClose,
   onFilesChange,
+  anchorRef,
 }: FileMentionDropdownProps) {
   const [files, setFiles] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout>>();
+  const [pos, setPos] = useState<{ top: number; left: number; width: number } | null>(null);
 
   const fetchFiles = useCallback(async (q: string) => {
     if (!projectPath) return;
@@ -56,6 +60,22 @@ export function FileMentionDropdown({
     }
   }, [visible, onFilesChange]);
 
+  // Position the dropdown above the anchor element
+  useEffect(() => {
+    if (!visible || !anchorRef.current) return;
+    const update = () => {
+      const rect = anchorRef.current!.getBoundingClientRect();
+      setPos({ top: rect.top, left: rect.left, width: rect.width });
+    };
+    update();
+    window.addEventListener('scroll', update, true);
+    window.addEventListener('resize', update);
+    return () => {
+      window.removeEventListener('scroll', update, true);
+      window.removeEventListener('resize', update);
+    };
+  }, [visible, anchorRef]);
+
   // Scroll selected item into view
   useEffect(() => {
     if (!visible || !containerRef.current) return;
@@ -63,12 +83,13 @@ export function FileMentionDropdown({
     item?.scrollIntoView({ block: 'nearest' });
   }, [selectedIndex, visible]);
 
-  if (!visible || !projectPath) return null;
+  if (!visible || !projectPath || !pos) return null;
 
-  return (
+  return createPortal(
     <div
       ref={containerRef}
-      className="absolute bottom-full left-0 right-0 z-[500] max-h-56 overflow-y-auto border border-zinc-600 bg-black/95 backdrop-blur-sm shadow-lg"
+      className="fixed z-[500] max-h-56 overflow-y-auto border border-zinc-600 bg-black/95 backdrop-blur-sm shadow-lg"
+      style={{ bottom: window.innerHeight - pos.top, left: pos.left, width: pos.width }}
     >
       {loading && files.length === 0 && (
         <div className="px-3 py-2 text-xs text-zinc-500">searching...</div>
@@ -105,6 +126,7 @@ export function FileMentionDropdown({
           </div>
         );
       })}
-    </div>
+    </div>,
+    document.body
   );
 }
