@@ -5,7 +5,7 @@ import Markdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import rehypeHighlight from 'rehype-highlight';
 import 'highlight.js/styles/github-dark.min.css';
-import { GitFork, Copy, ChevronDown, ChevronRight, X, Pencil, Download, ClipboardCopy, MessageSquarePlus, Brain, Settings2 as Settings2Icon } from 'lucide-react';
+import { GitFork, Copy, ChevronDown, ChevronRight, X, Pencil, Download, ClipboardCopy, MessageSquarePlus, Brain, Settings2 as Settings2Icon, Zap, FileText } from 'lucide-react';
 import { cn } from '@/components/shadcn/lib/utils';
 import { Button } from '@/components/shadcn/ui/button';
 import { Input } from '@/components/shadcn/ui/input';
@@ -226,6 +226,7 @@ export const SessionDetail = observer(({ store, tab }: Props) => {
               forking={tab.forking}
               globalExpand={store.settings.globalExpandTools}
               globalDiffs={store.settings.globalShowDiffs}
+              collapseFileMentions={store.settings.collapseFileMentions}
             />
           ))}
 
@@ -258,6 +259,7 @@ export const SessionDetail = observer(({ store, tab }: Props) => {
               forking={tab.forking}
               globalExpand={store.settings.globalExpandTools}
               globalDiffs={store.settings.globalShowDiffs}
+              collapseFileMentions={store.settings.collapseFileMentions}
             />
           ))}
 
@@ -424,6 +426,63 @@ function StreamingToolCallsView({ toolCalls }: { toolCalls: StreamingToolCall[] 
   );
 }
 
+/** Parse <FilesMentioned> XML block from user message content */
+function parseFileMentions(content: string): { text: string; files: { name: string; content: string }[] } {
+  const match = content.match(/\n?\n?<FilesMentioned>\n([\s\S]*?)\n<\/FilesMentioned>\s*$/);
+  if (!match) return { text: content, files: [] };
+
+  const text = content.slice(0, match.index).trimEnd();
+  const block = match[1];
+  const files: { name: string; content: string }[] = [];
+  const fileRegex = /<([^>]+)>\n([\s\S]*?)\n<\/\1>/g;
+  let fileMatch: RegExpExecArray | null;
+  while ((fileMatch = fileRegex.exec(block)) !== null) {
+    files.push({ name: fileMatch[1], content: fileMatch[2] });
+  }
+  return { text, files };
+}
+
+function UserMessageContent({ content, collapse, showFileMentions, onToggleFileMentions }: {
+  content: string;
+  collapse: boolean;
+  showFileMentions: boolean;
+  onToggleFileMentions: () => void;
+}) {
+  const { text, files } = parseFileMentions(content);
+
+  if (files.length === 0 || !collapse) {
+    return <span className="whitespace-pre-wrap">{content}</span>;
+  }
+
+  return (
+    <>
+      <span className="whitespace-pre-wrap">{text}</span>
+      <div className="mt-3 border-t border-zinc-800 pt-2">
+        <button
+          className={`text-xs flex items-center gap-1 px-2 py-0.5 border transition-colors ${
+            showFileMentions ? 'border-zinc-600 text-zinc-300 bg-zinc-800' : 'border-border text-zinc-500 hover:text-zinc-300'
+          }`}
+          onClick={onToggleFileMentions}
+        >
+          {showFileMentions ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
+          <FileText className="h-3 w-3" />
+          {files.length} file{files.length > 1 ? 's' : ''} mentioned
+        </button>
+        {showFileMentions && (
+          <div className="mt-2 space-y-1">
+            {files.map((f, i) => (
+              <div key={i} className="border border-zinc-800 bg-black/30">
+                <div className="px-3 py-1 text-xs text-zinc-400 border-b border-zinc-800 font-mono">{f.name}</div>
+                <pre className="px-3 py-2 text-xs text-zinc-400 whitespace-pre-wrap break-words font-[--font-mono] max-h-[300px] overflow-y-auto">{f.content}</pre>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </>
+  );
+}
+
 interface MessageBubbleProps {
   message: ConversationMessage;
   messageIndex: number;
@@ -433,9 +492,10 @@ interface MessageBubbleProps {
   forking: boolean;
   globalExpand: boolean;
   globalDiffs: boolean;
+  collapseFileMentions: boolean;
 }
 
-function MessageBubble({ message, messageIndex, totalMessages, onFork, onInsertImage, forking, globalExpand, globalDiffs }: MessageBubbleProps) {
+function MessageBubble({ message, messageIndex, totalMessages, onFork, onInsertImage, forking, globalExpand, globalDiffs, collapseFileMentions }: MessageBubbleProps) {
   const [localExpand, setLocalExpand] = useState<boolean | null>(null);
   const [localDiffs, setLocalDiffs] = useState<boolean | null>(null);
   const [previewImage, setPreviewImage] = useState<{ src: string; mediaType: string; data: string } | null>(null);
@@ -443,6 +503,7 @@ function MessageBubble({ message, messageIndex, totalMessages, onFork, onInsertI
   const [annotatedSrc, setAnnotatedSrc] = useState<string | null>(null);
   const [annotationCommands, setAnnotationCommands] = useState<DrawCommand[]>([]);
   const [showThinking, setShowThinking] = useState(false);
+  const [showFileMentions, setShowFileMentions] = useState(false);
   const isUser = message.type === 'user';
 
   const showTools = localExpand !== null ? localExpand : globalExpand;
@@ -627,7 +688,7 @@ function MessageBubble({ message, messageIndex, totalMessages, onFork, onInsertI
         ) : !message.content ? (
           <span className="text-zinc-500">(empty)</span>
         ) : isUser ? (
-          <span className="whitespace-pre-wrap">{message.content}</span>
+          <UserMessageContent content={message.content} collapse={collapseFileMentions} showFileMentions={showFileMentions} onToggleFileMentions={() => setShowFileMentions(!showFileMentions)} />
         ) : (
           <div className="markdown-body">
             <Markdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeHighlight]}>
@@ -963,6 +1024,8 @@ const ChatConfigPanel = observer(({ tab, onClose }: { tab: TabSession; onClose: 
               <SelectItem value="low">low</SelectItem>
               <SelectItem value="medium">medium</SelectItem>
               <SelectItem value="high">high</SelectItem>
+              <SelectItem value="xhigh">xhigh</SelectItem>
+              <SelectItem value="max">max</SelectItem>
             </SelectContent>
           </Select>
         </div>
@@ -1034,10 +1097,68 @@ const MessageInput = observer(forwardRef<ChatInputHandle, MessageInputProps>(fun
     effective.model || null,
     effective.reasoningEffort ? `effort:${effective.reasoningEffort}` : null,
   ].filter(Boolean).join(' · ');
+  const quickModels = globalSessionStore.quickSwitchModels;
+  const [showQuickSwitch, setShowQuickSwitch] = useState(false);
+  const quickSwitchRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!showQuickSwitch) return;
+    const handler = (e: MouseEvent) => {
+      if (quickSwitchRef.current && !quickSwitchRef.current.contains(e.target as Node)) {
+        setShowQuickSwitch(false);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [showQuickSwitch]);
+
+  const activeQuickLabel = quickModels.find(
+    (q) => q.model === effective.model && q.reasoningEffort === effective.reasoningEffort
+  )?.label;
 
   return (
     <div className="p-3 border-t border-border">
       <div className="flex items-center gap-2 mb-1.5">
+        {quickModels.length > 0 && (
+          <div className="relative" ref={quickSwitchRef}>
+            <button
+              className={cn(
+                'flex items-center gap-1 px-1.5 py-0.5 text-[10px] border transition-colors',
+                activeQuickLabel
+                  ? 'border-zinc-500 text-zinc-300 bg-zinc-800/50'
+                  : 'border-zinc-700 text-zinc-500 hover:text-zinc-400 hover:border-zinc-600'
+              )}
+              onClick={() => setShowQuickSwitch(!showQuickSwitch)}
+            >
+              <Zap className="h-3 w-3" />
+              {activeQuickLabel || configLabel || 'model'}
+              <ChevronDown className="h-2.5 w-2.5 ml-0.5" />
+            </button>
+            {showQuickSwitch && (
+              <div className="absolute bottom-full left-0 mb-1 border border-zinc-700 bg-zinc-900/95 min-w-[180px] py-1 z-50">
+                {quickModels.map((q, i) => {
+                  const isActive = q.model === effective.model && q.reasoningEffort === effective.reasoningEffort;
+                  return (
+                    <button
+                      key={i}
+                      className={cn(
+                        'w-full text-left px-3 py-1.5 text-xs transition-colors flex items-center justify-between gap-3',
+                        isActive ? 'text-zinc-200 bg-zinc-800' : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/50'
+                      )}
+                      onClick={() => {
+                        tab.setModelConfigOverride({ model: q.model, reasoningEffort: q.reasoningEffort });
+                        setShowQuickSwitch(false);
+                      }}
+                    >
+                      <span>{q.label}</span>
+                      {q.reasoningEffort && <span className="text-[10px] text-zinc-600">{q.reasoningEffort}</span>}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
         <button
           className={cn(
             'flex items-center gap-1 px-1.5 py-0.5 text-[10px] border transition-colors',
@@ -1048,7 +1169,7 @@ const MessageInput = observer(forwardRef<ChatInputHandle, MessageInputProps>(fun
           onClick={() => setShowConfig(!showConfig)}
         >
           <Settings2Icon className="h-3 w-3" />
-          {configLabel || 'model config'}
+          config
           {hasOverride && <span className="text-zinc-400 ml-0.5">(override)</span>}
         </button>
         {hasOverride && (

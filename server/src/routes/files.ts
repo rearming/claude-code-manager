@@ -152,6 +152,43 @@ router.get('/', async (req, res) => {
 });
 
 /**
+ * POST /api/files/read
+ * Read the contents of files relative to a project directory.
+ * Body: { project: string, files: string[] }
+ * Returns: { files: { path: string, content: string | null }[] }
+ */
+router.post('/read', async (req, res) => {
+  const projectPath = typeof req.body?.project === 'string' ? req.body.project : '';
+  const filePaths: unknown[] = Array.isArray(req.body?.files) ? req.body.files : [];
+
+  if (!projectPath || filePaths.length === 0) {
+    res.status(400).json({ error: 'project and files[] required' });
+    return;
+  }
+
+  const resolved = path.resolve(projectPath);
+  const results: { path: string; content: string | null }[] = [];
+
+  for (const fp of filePaths) {
+    if (typeof fp !== 'string') continue;
+    const full = path.resolve(resolved, fp);
+    // Prevent path traversal outside project
+    if (!full.startsWith(resolved + path.sep) && full !== resolved) {
+      results.push({ path: fp, content: null });
+      continue;
+    }
+    try {
+      const content = await fs.promises.readFile(full, 'utf-8');
+      results.push({ path: fp, content });
+    } catch {
+      results.push({ path: fp, content: null });
+    }
+  }
+
+  res.json({ files: results });
+});
+
+/**
  * POST /api/files/invalidate
  * Clear cache for a project (e.g., after file operations).
  */

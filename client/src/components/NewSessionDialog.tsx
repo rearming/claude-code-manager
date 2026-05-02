@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { observer } from 'mobx-react-lite';
-import { X, FolderOpen, FileText, ChevronDown, ChevronRight, Trash2, Send } from 'lucide-react';
+import { X, FolderOpen, FileText, ChevronDown, ChevronRight, Trash2, Send, Zap } from 'lucide-react';
 import { Button } from '@/components/shadcn/ui/button';
 import { Input } from '@/components/shadcn/ui/input';
 import {
@@ -10,8 +10,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/shadcn/ui/select';
+import { cn } from '@/components/shadcn/lib/utils';
 import { ChatInput } from './ChatInput';
-import type { SessionStore } from '../stores/SessionStore';
+import type { SessionStore, ModelConfig } from '../stores/SessionStore';
 import { draftStore } from '../stores/DraftStore';
 import type { ImageAttachment, Draft } from '../types';
 import { pickDirectory } from '../api';
@@ -47,6 +48,7 @@ export const NewSessionDialog = observer(({ store }: Props) => {
   const [editingDraftId, setEditingDraftId] = useState<string | null>(null);
   const [savedFlash, setSavedFlash] = useState(false);
   const [showCloseConfirm, setShowCloseConfirm] = useState(false);
+  const [selectedModel, setSelectedModel] = useState<Partial<ModelConfig> | null>(null);
   const [draftsExpanded, setDraftsExpanded] = useState(() => {
     try { return localStorage.getItem('ccm-new-session-drafts-expanded') !== 'false'; } catch { return true; }
   });
@@ -95,7 +97,8 @@ export const NewSessionDialog = observer(({ store }: Props) => {
     setDraftName('');
     localStorage.removeItem('ccm-new-session-message');
     setMessage('');
-    store.startNewSession(text, trimmedPath, images, nameToApply);
+    store.startNewSession(text, trimmedPath, images, nameToApply, selectedModel || undefined);
+    setSelectedModel(null);
   };
 
   const handleSaveDraft = () => {
@@ -246,6 +249,44 @@ export const NewSessionDialog = observer(({ store }: Props) => {
           )}
         </div>
 
+        {store.quickSwitchModels.length > 0 && (
+          <div className="space-y-1.5">
+            <label className="text-xs text-zinc-500 uppercase tracking-wide flex items-center gap-1.5">
+              <Zap className="h-3 w-3" /> model
+            </label>
+            <div className="flex items-center gap-1.5 flex-wrap">
+              <button
+                className={cn(
+                  'px-2 py-1 text-xs border transition-colors',
+                  !selectedModel
+                    ? 'border-zinc-500 text-zinc-300 bg-zinc-800/50'
+                    : 'border-zinc-700 text-zinc-500 hover:text-zinc-400 hover:border-zinc-600'
+                )}
+                onClick={() => setSelectedModel(null)}
+              >
+                global default
+              </button>
+              {store.quickSwitchModels.map((q, i) => {
+                const isActive = selectedModel?.model === q.model && (selectedModel?.reasoningEffort ?? '') === q.reasoningEffort;
+                return (
+                  <button
+                    key={i}
+                    className={cn(
+                      'px-2 py-1 text-xs border transition-colors',
+                      isActive
+                        ? 'border-zinc-500 text-zinc-300 bg-zinc-800/50'
+                        : 'border-zinc-700 text-zinc-500 hover:text-zinc-400 hover:border-zinc-600'
+                    )}
+                    onClick={() => setSelectedModel({ model: q.model, reasoningEffort: q.reasoningEffort })}
+                  >
+                    {q.label}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
         <ChatInput
           value={message}
           onChange={updateMessage}
@@ -323,7 +364,7 @@ export const NewSessionDialog = observer(({ store }: Props) => {
                             loadDraftIntoForm(draft);
                             return;
                           }
-                          store.startNewSession(draft.message, draft.projectPath, draft.images.length > 0 ? draft.images : undefined, draft.name || undefined);
+                          store.startNewSession(draft.message, draft.projectPath, draft.images.length > 0 ? draft.images : undefined, draft.name || undefined, selectedModel || undefined);
                           draftStore.deleteDraft(draft.id);
                         }}
                         onDelete={() => {

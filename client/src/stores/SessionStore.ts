@@ -28,7 +28,13 @@ interface PanelLayout {
 
 export interface ModelConfig {
   model: string;
-  reasoningEffort: '' | 'low' | 'medium' | 'high';
+  reasoningEffort: '' | 'low' | 'medium' | 'high' | 'xhigh' | 'max';
+}
+
+export interface QuickSwitchModel {
+  label: string;
+  model: string;
+  reasoningEffort: '' | 'low' | 'medium' | 'high' | 'xhigh' | 'max';
 }
 
 interface Settings {
@@ -43,6 +49,9 @@ interface Settings {
   notifyOnStreamEnd: boolean;
   modelConfig: ModelConfig;
   stickToBottom: boolean;
+  quickSwitchModels: QuickSwitchModel[];
+  includeFileMentionContent: boolean;
+  collapseFileMentions: boolean;
 }
 
 const defaultPanelLayout: PanelLayout = {
@@ -59,6 +68,13 @@ const defaultModelConfig: ModelConfig = {
   reasoningEffort: '',
 };
 
+const defaultQuickSwitchModels: QuickSwitchModel[] = [
+  { label: 'opus 4.7', model: 'claude-opus-4-7-20250417', reasoningEffort: '' },
+  { label: 'sonnet 4.6', model: 'claude-sonnet-4-6-20250417', reasoningEffort: '' },
+  { label: 'sonnet 4.6 low', model: 'claude-sonnet-4-6-20250417', reasoningEffort: 'low' },
+  { label: 'haiku 4.5', model: 'claude-haiku-4-5-20251001', reasoningEffort: '' },
+];
+
 const defaultSettings: Settings = {
   autoScrollOnNewMessages: true,
   dangerouslySkipPermissions: false,
@@ -71,6 +87,9 @@ const defaultSettings: Settings = {
   notifyOnStreamEnd: false,
   modelConfig: { ...defaultModelConfig },
   stickToBottom: false,
+  quickSwitchModels: [...defaultQuickSwitchModels],
+  includeFileMentionContent: true,
+  collapseFileMentions: true,
 };
 
 function loadSettings(): Settings {
@@ -260,6 +279,7 @@ export class SessionStore {
         }
       },
       () => this.modelConfig,
+      () => this.settings.includeFileMentionContent,
     );
   }
 
@@ -297,8 +317,9 @@ export class SessionStore {
   }
 
   /** Open a new-session tab (sessionId unknown until stream starts) */
-  openNewSessionTab(message: string, projectPath: string, images?: ImageAttachment[], customName?: string) {
+  openNewSessionTab(message: string, projectPath: string, images?: ImageAttachment[], customName?: string, modelOverride?: Partial<ModelConfig>) {
     const tab = this.createTab(null);
+    if (modelOverride) tab.setModelConfigOverride(modelOverride);
     this.tabs.push(tab);
     this.activeTabId = tab.tabId;
     this.persistTabs();
@@ -400,9 +421,9 @@ export class SessionStore {
     this.pendingDraftId = null;
   }
 
-  startNewSession(message: string, projectPath: string, images?: ImageAttachment[], customName?: string) {
+  startNewSession(message: string, projectPath: string, images?: ImageAttachment[], customName?: string, modelOverride?: Partial<ModelConfig>) {
     this.showNewSession = false;
-    this.openNewSessionTab(message, projectPath, images, customName);
+    this.openNewSessionTab(message, projectPath, images, customName, modelOverride);
   }
 
   // ── Settings / UI ─────────────────────────────────────────
@@ -482,6 +503,16 @@ export class SessionStore {
     this.persistSettings();
   }
 
+  setIncludeFileMentionContent(value: boolean) {
+    this.settings.includeFileMentionContent = value;
+    this.persistSettings();
+  }
+
+  setCollapseFileMentions(value: boolean) {
+    this.settings.collapseFileMentions = value;
+    this.persistSettings();
+  }
+
   setModelConfig(config: Partial<ModelConfig>) {
     this.settings.modelConfig = { ...this.settings.modelConfig, ...config };
     this.persistSettings();
@@ -489,6 +520,35 @@ export class SessionStore {
 
   get modelConfig(): ModelConfig {
     return this.settings.modelConfig || { ...defaultModelConfig };
+  }
+
+  get quickSwitchModels(): QuickSwitchModel[] {
+    return this.settings.quickSwitchModels ?? [...defaultQuickSwitchModels];
+  }
+
+  setQuickSwitchModels(models: QuickSwitchModel[]) {
+    this.settings.quickSwitchModels = models;
+    this.persistSettings();
+  }
+
+  addQuickSwitchModel(entry: QuickSwitchModel) {
+    this.settings.quickSwitchModels = [...this.quickSwitchModels, entry];
+    this.persistSettings();
+  }
+
+  updateQuickSwitchModel(index: number, updates: Partial<QuickSwitchModel>) {
+    const models = [...this.quickSwitchModels];
+    if (index < 0 || index >= models.length) return;
+    models[index] = { ...models[index], ...updates };
+    this.settings.quickSwitchModels = models;
+    this.persistSettings();
+  }
+
+  removeQuickSwitchModel(index: number) {
+    const models = [...this.quickSwitchModels];
+    models.splice(index, 1);
+    this.settings.quickSwitchModels = models;
+    this.persistSettings();
   }
 
   // ── Scroll positions ──────────────────────────────────────

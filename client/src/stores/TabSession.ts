@@ -1,6 +1,6 @@
 import { makeAutoObservable, runInAction } from 'mobx';
 import type { SessionDetail, ImageAttachment, ConversationMessage, ToolCallSummary } from '../types';
-import { fetchSessionDetail, resumeSession, forkSessionAt, streamMessageToSession, streamNewSession, fetchSessionStatus, subscribeToSession, killSessionProcess } from '../api';
+import { fetchSessionDetail, resumeSession, forkSessionAt, streamMessageToSession, streamNewSession, fetchSessionStatus, subscribeToSession, killSessionProcess, readProjectFiles } from '../api';
 import type { ModelConfig } from './SessionStore';
 
 // ── File change tracking ──────────────────────────────────
@@ -246,6 +246,7 @@ export class TabSession {
   private _applyForkName: (newSessionId: string, sourceTitle: string) => void;
   private _onStreamEnd: (sessionId: string | null, title: string, cost?: number) => void;
   private _getGlobalModelConfig: () => ModelConfig;
+  private _getIncludeFileMentionContent: () => boolean;
   private _reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private _rawLinesPersistTimer: ReturnType<typeof setTimeout> | null = null;
   private _pendingCustomName: string | null = null;
@@ -260,6 +261,7 @@ export class TabSession {
     applyForkName: (newSessionId: string, sourceTitle: string) => void,
     onStreamEnd: (sessionId: string | null, title: string, cost?: number) => void,
     getGlobalModelConfig: () => ModelConfig,
+    getIncludeFileMentionContent: () => boolean,
   ) {
     this.tabId = `tab-${nextTabId++}`;
     this.sessionId = sessionId;
@@ -270,7 +272,8 @@ export class TabSession {
     this._applyForkName = applyForkName;
     this._onStreamEnd = onStreamEnd;
     this._getGlobalModelConfig = getGlobalModelConfig;
-    makeAutoObservable<TabSession, '_onSessionsChanged' | '_getDangerouslySkipPermissions' | '_getCustomName' | '_setCustomName' | '_applyForkName' | '_onStreamEnd' | '_getGlobalModelConfig' | '_reconnectTimer' | '_rawLinesPersistTimer' | '_pendingCustomName' | '_lastResultCost'>(this, {
+    this._getIncludeFileMentionContent = getIncludeFileMentionContent;
+    makeAutoObservable<TabSession, '_onSessionsChanged' | '_getDangerouslySkipPermissions' | '_getCustomName' | '_setCustomName' | '_applyForkName' | '_onStreamEnd' | '_getGlobalModelConfig' | '_getIncludeFileMentionContent' | '_reconnectTimer' | '_rawLinesPersistTimer' | '_pendingCustomName' | '_lastResultCost'>(this, {
       _onSessionsChanged: false,
       _getDangerouslySkipPermissions: false,
       _getCustomName: false,
@@ -278,11 +281,36 @@ export class TabSession {
       _applyForkName: false,
       _onStreamEnd: false,
       _getGlobalModelConfig: false,
+      _getIncludeFileMentionContent: false,
       _reconnectTimer: false,
       _rawLinesPersistTimer: false,
       _pendingCustomName: false,
       _lastResultCost: false,
     });
+  }
+
+  /**
+   * Extract @file mentions from message text and append file contents as XML.
+   * Returns the enriched message string.
+   */
+  private async enrichMessageWithMentions(message: string, projectPath: string): Promise<string> {
+    if (!this._getIncludeFileMentionContent() || !projectPath) return message;
+
+    // Match @path tokens (no whitespace in path, preceded by start or whitespace)
+    const mentionRegex = /(?:^|(?<=\s))@(\S+)/g;
+    const paths: string[] = [];
+    let match: RegExpExecArray | null;
+    while ((match = mentionRegex.exec(message)) !== null) {
+      paths.push(match[1]);
+    }
+    if (paths.length === 0) return message;
+
+    const results = await readProjectFiles(projectPath, paths);
+    const found = results.filter(r => r.content !== null);
+    if (found.length === 0) return message;
+
+    const xmlParts = found.map(f => `<${f.path}>\n${f.content}\n</${f.path}>`);
+    return `${message}\n\n<FilesMentioned>\n${xmlParts.join('\n')}\n</FilesMentioned>`;
   }
 
   /** Effective model config: per-chat override merged over global */
@@ -548,7 +576,7 @@ export class TabSession {
     }
   }
 
-  sendMessage(sessionId: string, message: string, images?: ImageAttachment[]) {
+  async sendMessage(sessionId: string, message: string, images?: ImageAttachment[]) {
     this.sending = true;
     this.streamingText = '';
     this.pendingUserMessage = message || null;
@@ -561,9 +589,12 @@ export class TabSession {
     this.streamingBlocks = [];
     this.committedStreamingMessages = [];
 
+    const projectPath = this.selectedDetail?.summary?.project ?? '';
+    const enrichedMessage = await this.enrichMessageWithMentions(message, projectPath);
+
     this._lastResultCost = undefined;
     const mc = this.effectiveModelConfig;
-    const abort = streamMessageToSession(sessionId, message, this._getDangerouslySkipPermissions(), {
+    const abort = streamMessageToSession(sessionId, enrichedMessage, this._getDangerouslySkipPermissions(), {
       images: images,
       onText: (text) => { runInAction(() => { this.streamingText += text; }); },
       onRaw: (data) => { runInAction(() => { this.appendRawLine(data); }); },
@@ -601,7 +632,7 @@ export class TabSession {
     this.abortStream = abort;
   }
 
-  startNewSession(message: string, projectPath: string, images?: ImageAttachment[], customName?: string) {
+  async startNewSession(message: string, projectPath: string, images?: ImageAttachment[], customName?: string) {
     this.sending = true;
     this.streamingText = '';
     this.pendingUserMessage = message;
@@ -616,9 +647,11 @@ export class TabSession {
     this.streamingBlocks = [];
     this.committedStreamingMessages = [];
 
+    const enrichedMessage = await this.enrichMessageWithMentions(message, projectPath);
+
     this._lastResultCost = undefined;
     const mc = this.effectiveModelConfig;
-    const abort = streamNewSession(message, projectPath, this._getDangerouslySkipPermissions(), {
+    const abort = streamNewSession(enrichedMessage, projectPath, this._getDangerouslySkipPermissions(), {
       images: images,
       onInit: (data) => {
         runInAction(() => {

@@ -37,6 +37,20 @@ export async function searchProjectFiles(project: string, query?: string): Promi
   return data.files ?? [];
 }
 
+export async function readProjectFiles(
+  project: string,
+  files: string[]
+): Promise<{ path: string; content: string | null }[]> {
+  const res = await fetch(`${BASE}/files/read`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ project, files }),
+  });
+  if (!res.ok) return files.map(f => ({ path: f, content: null }));
+  const data = await res.json();
+  return data.files ?? [];
+}
+
 export async function fetchSessions(params?: {
   project?: string;
   search?: string;
