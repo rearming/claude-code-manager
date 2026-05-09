@@ -201,7 +201,14 @@ class SessionProcess extends EventEmitter {
         });
       }
     }
-    content.push({ type: 'text', text: message });
+    if (message) {
+      content.push({ type: 'text', text: message });
+    }
+
+    // Ensure there's at least one content block
+    if (content.length === 0) {
+      content.push({ type: 'text', text: ' ' });
+    }
 
     const userMsg = JSON.stringify({
       type: 'user',

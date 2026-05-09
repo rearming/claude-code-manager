@@ -47,6 +47,31 @@ export const SessionDetail = observer(({ store, tab }: Props) => {
   const isAutoScrollingRef = useRef(false);
   const isStale = useStaleStreamDetector(tab);
 
+  const [editingTitle, setEditingTitle] = useState(false);
+  const [titleEditValue, setTitleEditValue] = useState('');
+  const titleInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (editingTitle) titleInputRef.current?.select();
+  }, [editingTitle]);
+
+  const titleText = store.getCustomName(summary.sessionId) || summary.slug?.replaceAll('-', ' ') || summary.firstMessage.slice(0, 60);
+
+  const startTitleEdit = useCallback(() => {
+    setTitleEditValue(titleText || '');
+    setEditingTitle(true);
+  }, [titleText]);
+
+  const commitTitleEdit = useCallback(() => {
+    setEditingTitle(false);
+    store.renameSession(summary.sessionId, titleEditValue.trim());
+  }, [titleEditValue, store, summary.sessionId]);
+
+  const cancelTitleEdit = useCallback(() => {
+    setEditingTitle(false);
+    setTitleEditValue('');
+  }, []);
+
   const isNearBottom = useCallback(() => {
     const el = containerRef.current;
     if (!el) return true;
@@ -159,9 +184,27 @@ export const SessionDetail = observer(({ store, tab }: Props) => {
       {/* header */}
       <div className="px-5 py-3 border-b border-border flex items-start gap-3">
         <div className="flex-1 min-w-0">
-          <h2 className="text-base font-bold text-zinc-200 truncate">
-            {store.getCustomName(summary.sessionId) || summary.slug?.replaceAll('-', ' ') || summary.firstMessage.slice(0, 60)}
-          </h2>
+          {editingTitle ? (
+            <input
+              ref={titleInputRef}
+              className="text-base font-bold text-zinc-200 bg-zinc-800 border border-zinc-600 px-1.5 py-0.5 rounded-none outline-none focus:ring-0 w-full min-w-0"
+              value={titleEditValue}
+              onChange={(e) => setTitleEditValue(e.target.value)}
+              onBlur={commitTitleEdit}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') commitTitleEdit();
+                if (e.key === 'Escape') cancelTitleEdit();
+              }}
+            />
+          ) : (
+            <h2
+              className="text-base font-bold text-zinc-200 truncate cursor-pointer hover:text-zinc-100 transition-colors"
+              onDoubleClick={startTitleEdit}
+              title="double-click to rename"
+            >
+              {titleText || 'untitled session'}
+            </h2>
+          )}
           <div className="flex items-center gap-2 mt-0.5 text-xs text-zinc-500 flex-wrap">
             <span
               className="cursor-pointer hover:text-zinc-300 transition-colors"

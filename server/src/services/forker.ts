@@ -113,7 +113,7 @@ export async function forkSession(
   const now = new Date().toISOString();
 
   // Rewrite lines: inject forkedFrom into every entry that has a sessionId,
-  // and update sessionId to the new one
+  // update sessionId to the new one, and sanitize content blocks
   const newLines: string[] = [];
   for (const line of linesToCopy) {
     try {
@@ -130,6 +130,17 @@ export async function forkSession(
       // Update sessionId references
       if (entry.sessionId) {
         entry.sessionId = newSessionId;
+      }
+
+      // Sanitize content blocks: remove cache_control from empty text blocks
+      // to prevent API errors when Claude CLI resumes the forked session
+      const content = entry.message?.content;
+      if (Array.isArray(content)) {
+        for (const block of content) {
+          if (block.type === 'text' && !block.text && block.cache_control) {
+            delete block.cache_control;
+          }
+        }
       }
 
       newLines.push(JSON.stringify(entry));
