@@ -163,7 +163,7 @@ export const Layout = observer(({ store }: Props) => {
 });
 
 const Sidebar = observer(({ store }: { store: SessionStore }) => (
-  <aside className="bg-zinc-900/40 border-r border-border flex flex-col overflow-hidden h-full">
+  <aside className="bg-zinc-900/40 border-r border-border flex flex-col overflow-hidden h-full min-w-0">
     <div className="px-5 py-4 border-b border-border flex items-center justify-between">
       <h1 className="text-base font-bold text-zinc-200">claude code manager</h1>
       <div className="flex gap-1.5">

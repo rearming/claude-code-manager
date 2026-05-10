@@ -71,7 +71,7 @@ export const SessionList = observer(({ store }: Props) => {
   const unreadCount = activeSessions.filter((s) => unreadSids.has(s.sessionId)).length;
 
   return (
-    <div className="flex-1 overflow-y-auto">
+    <div className="flex-1 overflow-y-auto min-w-0">
       {hasActive && (
         <div>
           <div
@@ -122,7 +122,7 @@ export const SessionList = observer(({ store }: Props) => {
         return (
           <div key={project}>
             <div
-              className="px-4 py-2 text-xs font-bold text-zinc-500 uppercase tracking-wider bg-black/80 border-b border-border sticky top-0 flex items-center gap-1.5 cursor-pointer select-none hover:text-zinc-400 transition-colors"
+              className="px-4 py-2 text-xs font-bold text-zinc-500 uppercase tracking-wider bg-black/80 border-b border-border sticky top-0 flex items-center gap-1.5 cursor-pointer select-none hover:text-zinc-400 transition-colors min-w-0"
               onClick={() => store.toggleProjectCollapsed(project)}
             >
               {collapsed ? (
@@ -130,7 +130,7 @@ export const SessionList = observer(({ store }: Props) => {
               ) : (
                 <ChevronDown className="w-3 h-3 shrink-0" />
               )}
-              {project}
+              <span className="truncate">{project}</span>
               {collapsed && (
                 <span className="ml-auto text-[10px] font-normal text-zinc-600">
                   {sessions.length}

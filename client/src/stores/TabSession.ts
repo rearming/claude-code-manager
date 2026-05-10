@@ -493,6 +493,24 @@ export class TabSession {
     }
   }
 
+  /**
+   * Fetch session detail without clearing streaming state.
+   * Used during new session init to transition from the bare streaming
+   * view to SessionDetail while streaming is still active.
+   */
+  async initializeDetail(sessionId: string) {
+    try {
+      const detail = await fetchSessionDetail(sessionId);
+      runInAction(() => {
+        this.selectedDetail = detail;
+        this.scrollToBottomOnLoad = true;
+      });
+    } catch {
+      // Session might not be written to disk yet — that's OK,
+      // we stay in the streaming view and detail loads on completion.
+    }
+  }
+
   async reloadSession(sessionId: string, retryForNewMessages = false) {
     this.sessionId = sessionId;
     const previousCount = this.selectedDetail?.messages?.length || 0;
@@ -664,6 +682,10 @@ export class TabSession {
           }
           this._onSessionsChanged();
         });
+        // Fetch session detail early so the UI transitions from the
+        // bare "new session" streaming view to the full SessionDetail
+        // component (which has autoscroll, proper title, etc.)
+        this.initializeDetail(data.sessionId);
       },
       onText: (text) => { runInAction(() => { this.streamingText += text; }); },
       onRaw: (data) => { runInAction(() => { this.appendRawLine(data); }); },
