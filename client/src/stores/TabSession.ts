@@ -499,15 +499,28 @@ export class TabSession {
    * view to SessionDetail while streaming is still active.
    */
   async initializeDetail(sessionId: string) {
-    try {
-      const detail = await fetchSessionDetail(sessionId);
-      runInAction(() => {
-        this.selectedDetail = detail;
-        this.scrollToBottomOnLoad = true;
-      });
-    } catch {
-      // Session might not be written to disk yet — that's OK,
-      // we stay in the streaming view and detail loads on completion.
+    // The session file may not be written to disk yet when onInit fires,
+    // so retry a few times with increasing delay.
+    const delays = [500, 1000, 2000, 3000];
+    for (const delay of delays) {
+      await new Promise(r => setTimeout(r, delay));
+      // Bail if session changed or detail already loaded (e.g. stream finished)
+      if (this.sessionId !== sessionId || this.selectedDetail) return;
+      try {
+        const detail = await fetchSessionDetail(sessionId);
+        runInAction(() => {
+          if (this.sessionId !== sessionId || this.selectedDetail) return;
+          this.selectedDetail = detail;
+          // Clear pending message — it's now in the fetched detail,
+          // so keeping it would cause a duplicate in SessionDetail.
+          this.pendingUserMessage = null;
+          this.pendingImages = null;
+          this.scrollToBottomOnLoad = true;
+        });
+        return;
+      } catch {
+        // Not ready yet — try again
+      }
     }
   }
 
