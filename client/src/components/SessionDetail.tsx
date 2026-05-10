@@ -253,7 +253,7 @@ export const SessionDetail = observer(({ store, tab }: Props) => {
       )}
 
       {/* changed files */}
-      <ChangedFilesPanel tracker={tab.fileChanges} />
+      <ChangedFilesPanel tracker={tab.fileChanges} messages={tab.selectedDetail?.messages} />
 
       {/* messages */}
       <div className="flex-1 relative overflow-hidden">

@@ -1,12 +1,15 @@
 import { useState } from 'react';
 import { observer } from 'mobx-react-lite';
-import { FileEdit, FilePlus, Check, CheckCheck, ChevronDown, ChevronRight, Files } from 'lucide-react';
+import { FileEdit, FilePlus, Check, CheckCheck, ChevronDown, ChevronRight, Files, Diff } from 'lucide-react';
 import { cn } from '@/components/shadcn/lib/utils';
 import { Button } from '@/components/shadcn/ui/button';
 import type { FileChangeTracker, TrackedFileChange } from '../stores/SessionStore';
+import type { ConversationMessage } from '../types';
+import { DiffViewerModal } from './DiffViewerModal';
 
 interface Props {
   tracker: FileChangeTracker;
+  messages?: ConversationMessage[];
 }
 
 function fileName(filePath: string): string {
@@ -22,7 +25,7 @@ function dirPath(filePath: string): string {
   return (parts.length > 2 ? '.../' : '') + dirs.join('/') + '/';
 }
 
-function FileChangeRow({ change, onAcknowledge }: { change: TrackedFileChange; onAcknowledge?: () => void }) {
+function FileChangeRow({ change, onAcknowledge, onClickFile }: { change: TrackedFileChange; onAcknowledge?: () => void; onClickFile?: () => void }) {
   return (
     <div className="flex items-center gap-2 px-2 py-1 hover:bg-zinc-800/50 group min-w-0">
       {change.changeType === 'created' ? (
@@ -30,7 +33,13 @@ function FileChangeRow({ change, onAcknowledge }: { change: TrackedFileChange; o
       ) : (
         <FileEdit className="h-3 w-3 text-yellow-500 shrink-0" />
       )}
-      <div className="flex-1 min-w-0 flex items-baseline gap-1">
+      <div
+        className={cn(
+          'flex-1 min-w-0 flex items-baseline gap-1',
+          onClickFile && 'cursor-pointer hover:underline'
+        )}
+        onClick={onClickFile}
+      >
         <span className="text-xs text-zinc-300 truncate">{fileName(change.filePath)}</span>
         <span className="text-[10px] text-zinc-600 truncate">{dirPath(change.filePath)}</span>
       </div>
@@ -50,13 +59,28 @@ function FileChangeRow({ change, onAcknowledge }: { change: TrackedFileChange; o
   );
 }
 
-export const ChangedFilesPanel = observer(({ tracker }: Props) => {
+export const ChangedFilesPanel = observer(({ tracker, messages }: Props) => {
   const [showAll, setShowAll] = useState(false);
+  const [diffModalOpen, setDiffModalOpen] = useState(false);
+  const [diffModalFile, setDiffModalFile] = useState<string | undefined>(undefined);
+
   const pending = tracker.pendingFiles;
   const acknowledged = tracker.acknowledgedFilesList;
   const allFiles = tracker.allFilesList;
 
   if (allFiles.length === 0) return null;
+
+  const openDiffForFile = (filePath: string) => {
+    if (!messages) return;
+    setDiffModalFile(filePath);
+    setDiffModalOpen(true);
+  };
+
+  const openAllDiffs = () => {
+    if (!messages) return;
+    setDiffModalFile(undefined);
+    setDiffModalOpen(true);
+  };
 
   return (
     <div className="border-b border-border">
@@ -70,15 +94,28 @@ export const ChangedFilesPanel = observer(({ tracker }: Props) => {
                 {pending.length} pending
               </span>
             </div>
-            <Button
-              size="sm"
-              variant="ghost"
-              className="h-5 px-1.5 text-[10px] text-zinc-500 hover:text-zinc-200"
-              onClick={() => tracker.acknowledgeAll()}
-            >
-              <CheckCheck className="h-3 w-3 mr-1" />
-              confirm all
-            </Button>
+            <div className="flex items-center gap-1">
+              {messages && (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="h-5 px-1.5 text-[10px] text-zinc-500 hover:text-zinc-200"
+                  onClick={openAllDiffs}
+                >
+                  <Diff className="h-3 w-3 mr-1" />
+                  all diffs
+                </Button>
+              )}
+              <Button
+                size="sm"
+                variant="ghost"
+                className="h-5 px-1.5 text-[10px] text-zinc-500 hover:text-zinc-200"
+                onClick={() => tracker.acknowledgeAll()}
+              >
+                <CheckCheck className="h-3 w-3 mr-1" />
+                confirm all
+              </Button>
+            </div>
           </div>
           <div className="max-h-[140px] overflow-y-auto">
             {pending.map(change => (
@@ -86,6 +123,7 @@ export const ChangedFilesPanel = observer(({ tracker }: Props) => {
                 key={change.filePath}
                 change={change}
                 onAcknowledge={() => tracker.acknowledge(change.filePath)}
+                onClickFile={messages ? () => openDiffForFile(change.filePath) : undefined}
               />
             ))}
           </div>
@@ -113,19 +151,43 @@ export const ChangedFilesPanel = observer(({ tracker }: Props) => {
             {acknowledged.length} confirmed
           </span>
         )}
+        {/* all diffs button when no pending (so it's always accessible) */}
+        {pending.length === 0 && messages && (
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-5 px-1.5 text-[10px] text-zinc-500 hover:text-zinc-200 ml-auto"
+            onClick={(e) => { e.stopPropagation(); openAllDiffs(); }}
+          >
+            <Diff className="h-3 w-3 mr-1" />
+            all diffs
+          </Button>
+        )}
       </div>
       {showAll && (
         <div className="max-h-[200px] overflow-y-auto border-t border-zinc-800">
           {allFiles.map(change => {
             const isAcked = tracker.acknowledgedFiles.has(change.filePath);
             return (
-              <div key={change.filePath} className={cn('flex items-center gap-2 px-2 py-1 min-w-0', isAcked && 'opacity-50')}>
+              <div
+                key={change.filePath}
+                className={cn(
+                  'flex items-center gap-2 px-2 py-1 min-w-0 hover:bg-zinc-800/50',
+                  isAcked && 'opacity-50'
+                )}
+              >
                 {change.changeType === 'created' ? (
                   <FilePlus className="h-3 w-3 text-green-500 shrink-0" />
                 ) : (
                   <FileEdit className="h-3 w-3 text-yellow-500 shrink-0" />
                 )}
-                <div className="flex-1 min-w-0 flex items-baseline gap-1">
+                <div
+                  className={cn(
+                    'flex-1 min-w-0 flex items-baseline gap-1',
+                    messages && 'cursor-pointer hover:underline'
+                  )}
+                  onClick={messages ? () => openDiffForFile(change.filePath) : undefined}
+                >
                   <span className="text-xs text-zinc-300 truncate">{fileName(change.filePath)}</span>
                   <span className="text-[10px] text-zinc-600 truncate">{dirPath(change.filePath)}</span>
                 </div>
@@ -137,6 +199,16 @@ export const ChangedFilesPanel = observer(({ tracker }: Props) => {
             );
           })}
         </div>
+      )}
+
+      {/* diff viewer modal */}
+      {messages && (
+        <DiffViewerModal
+          open={diffModalOpen}
+          onClose={() => setDiffModalOpen(false)}
+          messages={messages}
+          initialFile={diffModalFile}
+        />
       )}
     </div>
   );
